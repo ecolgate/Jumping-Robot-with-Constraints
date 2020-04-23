@@ -79,9 +79,6 @@ while tnow < params.sim.tfinal
     end
 end
 
-xsim = xsim'; % transpose so that xsim is 10xN (N = number of timesteps)
-
-
 figure;
 weight = (params.model.dyn.foot.m+params.model.dyn.spine.m+params.model.dyn.body.m)*params.model.dyn.g*ones(1,length(tsim));
 plot(tsim,F_list(2,:)+F_list(4,:),'b-','LineWidth',2);
@@ -94,7 +91,24 @@ hold off
 %% Un-comment if you want to animate the "jump"
 pause;
 
-animate_robot(xsim(1:5,:),F_list,params,'trace_foot_com',true,...
+% Let's resample the simulator output so we can animate with evenly-spaced
+% points in (time,state).
+% 1) deal with possible duplicate times in tsim:
+% (https://www.mathworks.com/matlabcentral/answers/321603-how-do-i-interpolate-1d-data-if-i-do-not-have-unique-values
+tsim = cumsum(ones(size(tsim)))*eps + tsim;
+
+% 2) resample the duplicate-free time vector:
+t_anim = 0:params.viz.dt:tsim(end);
+
+% 3) resample the state-vs-time array:
+x_anim = interp1(tsim,xsim,t_anim);
+x_anim = x_anim'; % transpose so that xsim is 10xN (N = number of timesteps)
+
+% 4) resample the constraint forces-vs-time array:
+F_anim = interp1(tsim,F_list',t_anim);
+F_anim = F_anim';
+
+animate_robot(x_anim(1:5,:),F_anim,params,'trace_foot_com',true,...
     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
 fprintf('Done!\n');
 

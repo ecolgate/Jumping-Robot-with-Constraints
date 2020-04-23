@@ -77,6 +77,7 @@ function params = init_params
     params.viz.colors.tracers.spine_tip = 'g';
     params.viz.colors.vectors = 'k';
     params.viz.axis_lims = [-1,1,-0.5,1];
+    params.viz.dt = 0.01; % timestep for animation
     
     % home shape/configuration of foot with CoM at origin
     params.foot.home.top.x             = 0;
