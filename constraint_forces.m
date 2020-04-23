@@ -13,6 +13,8 @@
 % Outputs:
 %   F_list: a 4xlength(tsim) array of constraint forces
 
+% TODO: return [F, A] given t,x,variables,params
+
 function [Fseg] = constraint_forces(tseg,xseg,variables,params)
 
 Fseg = zeros(4,length(tseg));

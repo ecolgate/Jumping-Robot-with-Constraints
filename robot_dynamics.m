@@ -37,26 +37,27 @@ Minv = inv_mass_matrix(x,params);
 
 % build the constraints, forces, and solve for acceleration 
 nc = variables.foot.constraints(1) + 2*variables.foot.constraints(2);  % number of active contacts
+% TODO: [F, A] = constraint_forces(t,x,variables,params);
 switch nc  
     case 0      % both feet are off the ground
-        dx(1:nq) = q_dot;
-        dx(nq+1:2*nq) = Minv*(Q - H);
+        constraint_term = zeros(nq,1); % no constraints active
+        proj_mat = eye(nq); % not really a projection matrix for this case
     case 1      % left foot is on the ground and right is off
         [A_all,Hessian] = constraint_derivatives(x,params);
         A = A_all([1,2],:);
         Adotqdot = [q_dot'*Hessian(:,:,1)*q_dot;
                     q_dot'*Hessian(:,:,2)*q_dot ];
         F = inv(A*Minv*A')*(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*inv(A*A')*A)*x(6:10);
-        dx(nq+1:2*nq) = Minv*(Q - H - A'*F);
+        constraint_term = A'*F;
+        proj_mat = eye(nq) - A'*inv(A*A')*A;
     case 2      % right foot is on the ground and left is off
         [A_all,Hessian] = constraint_derivatives(x,params);
         A = A_all([3,4],:);
         Adotqdot = [q_dot'*Hessian(:,:,3)*q_dot;
                     q_dot'*Hessian(:,:,4)*q_dot ];
         F = inv(A*Minv*A')*(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*inv(A*A')*A)*x(6:10);
-        dx(nq+1:2*nq) = Minv*(Q - H - A'*F);
+        constraint_term = A'*F;
+        proj_mat = eye(nq) - A'*inv(A*A')*A;
     case 3      % both feet are on the ground
         [A_all,Hessian] = constraint_derivatives(x,params);
         A = A_all([1,2,4],:);
@@ -64,8 +65,11 @@ switch nc
                     q_dot'*Hessian(:,:,2)*q_dot;
                     q_dot'*Hessian(:,:,4)*q_dot ];
         F = inv(A*Minv*A')*(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*inv(A*A')*A)*x(6:10);
-        dx(nq+1:2*nq) = Minv*(Q - H - A'*F);
+        constraint_term = A'*F;
+        proj_mat = eye(nq) - A'*inv(A*A')*A;
 end
+
+dx(1:nq) = proj_mat*q_dot;
+dx(nq+1:2*nq) = Minv*(Q - H - constraint_term);
 
 end
