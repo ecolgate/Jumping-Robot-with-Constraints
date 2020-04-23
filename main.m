@@ -12,7 +12,7 @@
 function main
 
 %% Initialize environment
-clear;
+clear all; % a little inefficient but MATLAB's memory management is buggy.
 close all;
 clc;
 
@@ -23,7 +23,7 @@ params = init_params;
 variables = init_variables(params);
 
 %% Set up events using odeset
-options = odeset('Events',@robot_events_nested);
+options = odeset('Events',@(t,x) robot_events_nested(t,x,variables,params));
 
 %% Simulate the robot forward in time 
 x_IC = params.x_IC';    % initial conditions
@@ -38,7 +38,9 @@ F_list = [];
 while tnow < params.sim.tfinal
 
     tspan = [tnow params.sim.tfinal];
-    [tseg, xseg, te, xe, ie] = ode45(@(t,x) robot_dynamics(t,x,variables,params), tspan, x_IC, options);
+    [tseg, xseg, te, xe, ie] = ode45(@(t,x) ...
+                                     robot_dynamics(t,x,variables,params),...
+                                     tspan, x_IC, options);
 
     % augment tsim and xsim; renew ICs
     tsim = [tsim;tseg];
@@ -90,85 +92,10 @@ xlabel('time (sec)')
 hold off
 
 %% Un-comment if you want to animate the "jump"
-% pause;
-% 
-% animate_robot(xsim(1:5,:),F_list,params,'trace_foot_com',true,...
-%     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
-% fprintf('Done!\n');
+pause;
 
-
-%% Event function for ODE45%
-% Description:
-%   Event function that is called when a constraint becomes inactive (or, in the future, active) 
-%
-% Inputs:
-%   tsim: the array of time values selected by ode45
-%   xsim: the 10xlength(tsim) array of states computed by ode45;
-%   variables:  a struct with many elements
-%   params:  a struct with many elements
-%
-% Outputs:
-%   value
-%   isterminal
-%   direction
-function [value,isterminal,direction] = robot_events_nested(t,x)
-
-    % for convenience, define q and q_dot
-    nq = numel(x)/2;    % assume that x = [q;q_dot];
-    q = x(1:nq);
-    q_dot = x(nq+1:2*nq);
-
-    % solve for control inputs at this instant
-    tau_s = interp1(variables.motor.spine.time,variables.motor.spine.torque,t);
-    tau_m = interp1(variables.motor.body.time,variables.motor.body.torque,t);
-    Q = [0;0;0;tau_s;tau_m];
-
-    % find the parts that don't depend on constraint forces
-    H = H_eom(x,params);
-    M = mass_matrix(x,params);
-    Minv = inv_mass_matrix(x,params);
-
-    % build the constraints and forces 
-    %event_variables = variables.foot.constraints
-    nc = variables.foot.constraints(1) + 2*variables.foot.constraints(2);  % number of active contacts
-    switch nc  
-        case 0      % both feet are off the ground
-            value = 1;
-            isterminal = 0;
-            direction = 0;
-        case 1      % left foot is on the ground and right is off
-            [A_all,Hessian] = constraint_derivatives(x,params);
-            A = A_all([1,2],:);
-            Adotqdot = [q_dot'*Hessian(:,:,1)*q_dot;
-                        q_dot'*Hessian(:,:,2)*q_dot ];
-            F = inv(A*Minv*A')*(A*Minv*(Q - H) + Adotqdot);
-            value = F(2);
-            isterminal = 1;
-            direction - -1;
-        case 2      % right foot is on the ground and left is off
-            [A_all,Hessian] = constraint_derivatives(x,params);
-            A = A_all([3,4],:);
-            Adotqdot = [q_dot'*Hessian(:,:,3)*q_dot;
-                        q_dot'*Hessian(:,:,4)*q_dot ];
-            F = inv(A*Minv*A')*(A*Minv*(Q - H) + Adotqdot);
-            value = F(2);
-            isterminal = 1;
-            direction = -1;
-        case 3      % both feet are on the ground
-            [A_all,Hessian] = constraint_derivatives(x,params);
-            A = A_all([1,2,4],:);
-            Adotqdot = [q_dot'*Hessian(:,:,1)*q_dot;
-                        q_dot'*Hessian(:,:,2)*q_dot;
-                        q_dot'*Hessian(:,:,4)*q_dot ];
-            F = inv(A*Minv*A')*(A*Minv*(Q - H) + Adotqdot);
-            value = F(2:3);
-            isterminal = ones(2,1);
-            direction = -ones(2,1);
-    end
-    
-
-end
-%% End of nested function
-
+animate_robot(xsim(1:5,:),F_list,params,'trace_foot_com',true,...
+    'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
+fprintf('Done!\n');
 
 end
