@@ -20,5 +20,8 @@ This struct get passed around throughout the simulation, and saves you from havi
 Another way to avoid input argument order-dependency (a trademark of brittle code) is to use Name-Value pairs, which you have probably experienced if you've used MATLAB before.
 Name-Value pairs rely on an "input parser"; check out `plot_robot.m` and `animate_robot.m` to see how this works.
 
-## Nested Functions
+### Nested Functions
 `ode45` calls a function named `robot_dynamics.m` that is placed inside of (i.e., nested within) `main.m` as well as a function named `robot_events.m` for determining when an event, such as a constraint force going to zero, occurs.  This allows the three functions to share variables (including `params` and `F`) without explicit passing.  This is helpful since the constraint forces `F` are computed within `robot_dynamics.m` but cannot be easily passed back through `ode45`.
+
+### Status
+Well, it jumps.  As of yet, there is no constraint when the body hits the top of the spine, or the bottom for that matter.  So the body and spine tend to come apart...
