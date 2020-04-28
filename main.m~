@@ -82,6 +82,8 @@ ylabel('Ground Reaction vs Weight (N)')
 xlabel('time (sec)')
 hold off
 
+pause;
+
 % Now let's animate
 
 % Let's resample the simulator output so we can animate with evenly-spaced
@@ -154,7 +156,7 @@ switch params.sim.constraints
         Adotqdot = [q_dot'*Hessian(:,:,1)*q_dot;
                     q_dot'*Hessian(:,:,2)*q_dot ];
         Fnow = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*((A*A')\A))*x(6:10);
+        dx(1:nq) = (eye(nq) - A'*(A*A')\A)*x(6:10);
         dx(nq+1:2*nq) = Minv*(Q - H - A'*Fnow);
         F = [Fnow;0;0];
     case ['false','true']      % right foot is on the ground and left is off
@@ -162,7 +164,7 @@ switch params.sim.constraints
         Adotqdot = [q_dot'*Hessian(:,:,3)*q_dot;
                     q_dot'*Hessian(:,:,4)*q_dot ];
         Fnow = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*((A*A')\A))*x(6:10);
+        dx(1:nq) = (eye(nq) - A'*(A*A')\A)*x(6:10);
         dx(nq+1:2*nq) = Minv*(Q - H - A'*Fnow);
         F = [0;0;Fnow];
     case ['true','true']      % both feet are on the ground
@@ -171,7 +173,7 @@ switch params.sim.constraints
                     q_dot'*Hessian(:,:,2)*q_dot;
                     q_dot'*Hessian(:,:,4)*q_dot ];
         Fnow = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*((A*A')\A))*x(6:10);
+        dx(1:nq) = (eye(nq) - A'*(A*A')*A)*x(6:10);
         dx(nq+1:2*nq) = Minv*(Q - H - A'*Fnow);
         F = [Fnow(1);Fnow(2);0;Fnow(3)];
 end

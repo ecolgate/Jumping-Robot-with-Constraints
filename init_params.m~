@@ -83,9 +83,9 @@ function params = init_params
     params.motor.body.torque1 = params.motor.body.peaktorque*ones(1,length(params.motor.body.time1)); 
     params.motor.body.torque1(1) = params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r;  % make the initial torque enough to hold up body
     params.motor.body.time2 = .183+dt:dt:.25;
-    params.motor.body.torque2 = -2*params.motor.body.peaktorque*ones(1,length(params.motor.body.time2));
-    params.motor.body.time3 = .25+dt:dt:tfinal;
-    params.motor.body.torque3 = .2*params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r*ones(1,length(params.motor.body.time3));
+    params.motor.body.torque2 = -8*params.motor.body.peaktorque*ones(1,length(params.motor.body.time2));
+    params.motor.body.time3 = .2+dt:dt:tfinal;
+    params.motor.body.torque3 = params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r*ones(1,length(params.motor.body.time3));
     params.motor.body.time = horzcat(params.motor.body.time1,params.motor.body.time2,params.motor.body.time3);
     params.motor.body.torque = horzcat(params.motor.body.torque1,params.motor.body.torque2,params.motor.body.torque3);
     
@@ -98,8 +98,7 @@ function params = init_params
     params.viz.colors.tracers.body_com = 'b';
     params.viz.colors.tracers.spine_tip = 'g';
     params.viz.colors.vectors = 'k';
-    params.viz.axis_lims = [-1,1,-0.5,3];
-    params.viz.dt = 0.01; % timestep for animation
+    params.viz.axis_lims = [-1,1,-0.5,1];
     
     % home shape/configuration of foot with CoM at origin
     params.foot.home.top.x             = 0;
