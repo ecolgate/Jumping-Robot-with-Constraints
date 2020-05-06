@@ -34,9 +34,10 @@ tsim = [];
 xsim = [];
 F_list = [];
 
-% create a place for constraint forces
-F = [];
+% create a place for events
+events = [];
 
+% the main loop
 while tnow < params.sim.tfinal
 
     tspan = [tnow params.sim.tfinal];
@@ -49,32 +50,24 @@ while tnow < params.sim.tfinal
     x_IC = xsim(end,:); 
     
     % compute the constraint forces that were active during the jump
-    [Fseg] = constraint_forces(tseg,xseg',params);
+    Fseg = zeros(6,length(tseg));
+    for i=1:length(tseg)
+        [~,Fseg(:,i)] = robot_dynamics(tseg(i),xseg(i,:)');
+    end
     F_list = [F_list,Fseg];
     
-    % if simulation terminated before tfinal, determine which constaints
-    % are still active, then continue integration
+    % if simulation terminated before tfinal, update the constraints and, if necessary, the velocities
     if tseg(end) < params.sim.tfinal  % termination was triggered by an event
-        switch params.sim.constraints
-            case ['true','false']  % the left foot was on the ground prior to termination
-                 params.sim.constraints = ['false','false'];  % now the left foot is off
-            case ['false','true'] % the right foot only was on the ground prior to termination
-                 params.sim.constraints = ['false','false'];  % now the right foot is off
-            case ['true','true'] % both feet were on the ground prior to termination
-                 if ie == 1
-                    params.sim.constraints = ['false','true'];  % now the left foot is off
-                 else
-                    params.sim.constraints = ['true','false'];  % now the right foot is off
-                 end
-        end
+        [x_IC] = change_constraints(x_IC,ie);
     end
+    
 end
 
 %%  Plot Results %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Begin with plot of ground reaction versus weight, to be sure we're
 % pushing off and then leaving the ground
 figure;
-plot(tsim,F_list(2,:)+F_list(4,:),'b-','LineWidth',2);
+plot(tsim,F_list(3,:)+F_list(4,:),'b-','LineWidth',2);
 hold on
 weight = (params.model.dyn.foot.m+params.model.dyn.spine.m+params.model.dyn.body.m)*params.model.dyn.g*ones(1,length(tsim));
 plot(tsim,weight,'r-','LineWidth',1);
@@ -82,32 +75,38 @@ ylabel('Ground Reaction vs Weight (N)')
 xlabel('time (sec)')
 hold off
 
-pause;
-
-% Now let's animate
-
-% Let's resample the simulator output so we can animate with evenly-spaced
-% points in (time,state).
-% 1) deal with possible duplicate times in tsim:
+%% Animate Results %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Let's resample the simulator output so we can animate with evenly-spaced 
+% points in (time,state). 
+% 1) deal with possible duplicatetimes in tsim: 
 % (https://www.mathworks.com/matlabcentral/answers/321603-how-do-i-interpolate-1d-data-if-i-do-not-have-unique-values
 tsim = cumsum(ones(size(tsim)))*eps + tsim;
 
-% 2) resample the duplicate-free time vector:
+% 2) resample the duplicate-free time vector: 
 t_anim = 0:params.viz.dt:tsim(end);
 
-% 3) resample the state-vs-time array:
-x_anim = interp1(tsim,xsim,t_anim);
-x_anim = x_anim'; % transpose so that xsim is 10xN (N = number of timesteps)
+% 3) resample the state-vs-time array: 
+x_anim = interp1(tsim,xsim,t_anim); x_anim = x_anim';  % transpose so that xsim is 10xN (N = number of timesteps)
 
-% 4) resample the constraint forces-vs-time array:
-F_anim = interp1(tsim,F_list',t_anim);
-F_anim = F_anim';
+% 4) resample the constraint forces-vs-time array: 
+F_anim = interp1(tsim,F_list',t_anim); F_anim = F_anim';
 
-animate_robot(x_anim(1:5,:),F_anim,params,'trace_foot_com',true,...
+% xsim = xsim';
+% animate_robot(xsim(1:5,:),F_list(1:4,:),params,'trace_foot_com',true,...
+%     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
+animate_robot(x_anim(1:5,:),F_anim(1:4,:),params,'trace_foot_com',true,...
     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
 fprintf('Done!\n');
 
-%% BELOW HERE ARE THE NESTED FUNCTIONS, ROBOT_DYNAMICS AND ROBOT_EVENTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% end of main.m, except for nested functions
+
+
+
+
+
+
+%% BELOW HERE ARE THE NESTED FUNCTIONS, ROBOT_DYNAMICS, ROBOT_EVENTS, AND CHANGE_CONSTRAINTS
 %% THEY HAVE ACCESS TO ALL VARIABLES IN MAIN
 
 %% robot_dynamics.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -127,68 +126,82 @@ fprintf('Done!\n');
 %
 % Outputs:
 %   dx: derivative of state x with respect to time.
+%   F:  6x1 vector of constraint forces
 
-function [dx] = robot_dynamics(t,x)
+function [dx,F] = robot_dynamics(~,x)
 
 % for convenience, define q_dot
 dx = zeros(numel(x),1);
 nq = numel(x)/2;    % assume that x = [q;q_dot];
 q_dot = x(nq+1:2*nq);
 
-% solve for control inputs at this instant
-tau_s = interp1(params.motor.spine.time,params.motor.spine.torque,t);
-tau_m = interp1(params.motor.body.time,params.motor.body.torque,t);
-Q = [0;0;0;tau_s;tau_m];
+% if both feet are on ground and body hasn't hit top, then apply max torque
+if params.sim.constraints.uni(1) == 1 && params.sim.constraints.uni(2) == 1 && params.sim.constraints.uni(3) == 0
+    Q = [0;0;0;0;.5*params.motor.body.peaktorque];
+else
+    Q = zeros(5,1);
+end
 
 % find the parts that don't depend on constraint forces
 H = H_eom(x,params);
 Minv = inv_mass_matrix(x,params);
-[A_all,Hessian] = constraint_derivatives(x,params);
+[A_bilateral,A_unilateral,Hessian_bilateral,Hessian_unilateral] = constraint_derivatives(x,params);
 
-% build the constraints, forces, and solve for acceleration 
-switch params.sim.constraints  
-    case ['false','false']     % both feet are off the ground
-        dx(1:nq) = q_dot;
-        dx(nq+1:2*nq) = Minv*(Q - H);
-        F = [0;0;0;0];
-    case ['true','false']      % left foot is on the ground and right is off
-        A = A_all([1,2],:);
-        Adotqdot = [q_dot'*Hessian(:,:,1)*q_dot;
-                    q_dot'*Hessian(:,:,2)*q_dot ];
-        Fnow = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*(A*A')\A)*x(6:10);
-        dx(nq+1:2*nq) = Minv*(Q - H - A'*Fnow);
-        F = [Fnow;0;0];
-    case ['false','true']      % right foot is on the ground and left is off
-        A = A_all([3,4],:);
-        Adotqdot = [q_dot'*Hessian(:,:,3)*q_dot;
-                    q_dot'*Hessian(:,:,4)*q_dot ];
-        Fnow = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*(A*A')\A)*x(6:10);
-        dx(nq+1:2*nq) = Minv*(Q - H - A'*Fnow);
-        F = [0;0;Fnow];
-    case ['true','true']      % both feet are on the ground
-        A = A_all([1,2,4],:);
-        Adotqdot = [q_dot'*Hessian(:,:,1)*q_dot;
-                    q_dot'*Hessian(:,:,2)*q_dot;
-                    q_dot'*Hessian(:,:,4)*q_dot ];
-        Fnow = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);
-        dx(1:nq) = (eye(nq) - A'*(A*A')*A)*x(6:10);
-        dx(nq+1:2*nq) = Minv*(Q - H - A'*Fnow);
-        F = [Fnow(1);Fnow(2);0;Fnow(3)];
+%% solve for constraint forces, if any; compute accelerations;  populate the events vector
+n_active_constraints = sum(params.sim.constraints.uni);  % number of active unilateral constraints
+
+if n_active_constraints == 0  % if there are no constraints active, then there are no forces
+    
+    F_active = zeros(6,1);
+    dx(1:nq) = q_dot;
+    dx(nq+1:2*nq) = Minv*(Q - H);
+    
+else  % if there are constraints active, we must compute the constraint forces
+    % initialize A and Adotqdot
+    A = [];
+    Adotqdot = [];
+    
+    % build A and Adotqdot, starting with unilateral constraints
+    for ic=1:4    % cycle through all of the unilateral constraints
+        if params.sim.constraints.uni(ic) == 1    % if a constraint is active, add to A and Adotqdot
+            A = [A;A_unilateral(ic,:)];
+            Adotqdot = [Adotqdot;q_dot'*Hessian_unilateral(:,:,ic)*q_dot];
+        end
+    end
+    % now add in the bilateral constraint
+    if params.sim.constraints.uni(1) == 1  % if the left foot constraint is active, add in that bilateral
+        A = [A;A_bilateral(1,:)];
+        Adotqdot = [Adotqdot;q_dot'*Hessian_bilateral(:,:,1)*q_dot];
+    elseif params.sim.constraints.uni(2) == 1  % if the left foot was NOT active, but the right foot is, add in that bilateral
+        A = [A;A_bilateral(2,:)];
+        Adotqdot = [Adotqdot;q_dot'*Hessian_bilateral(:,:,2)*q_dot];
+    end
+            
+    % compute the constraint forces and accelerations
+    F_active = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);   % these are all the forces, unilateral and bilateral
+    dx(1:nq) = (eye(nq) - A'*((A*A')\A))*x(6:10);
+    dx(nq+1:2*nq) = Minv*(Q - H - A'*F_active);
+        
+end
+
+% do other things:  either create a force vector or an events vector
+if nargout>1  % create a 6x1 vector of forces for plotting 
+    F = constraint_forces(F_active,params);    
+else  % populate the events vector
+    events = update_events(x,F_active,params);
 end
 
 end
-%% end of robot_dynamics.m
+%% end of robot_dynamics.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 %% Event function for ODE45 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Description:
-%   Event function that is called when a constraint becomes inactive (or, in the future, active) 
+%   Event function that is called when a constraint becomes active or inactive
 %
 % Inputs:
 %   t and x are required, but not used
-%   F is shared with parent function
+%   events is shared with parent function
 %
 % Outputs:
 %   value
@@ -196,29 +209,67 @@ end
 %   direction
 function [value,isterminal,direction] = robot_events(~,~)
 
-    switch params.sim.constraints  
-        case ['false','false']      % both feet are off the ground
-            value = 1;
-            isterminal = 0;
-            direction = 0;
-        case ['true','false']      % left foot is on the ground and right is off
-            value = F(2);
-            isterminal = 1;
-            direction = -1;
-        case ['false','true']      % right foot is on the ground and left is off
-            value = F(4);
-            isterminal = 1;
-            direction = -1;
-        case ['true','true']      % both feet are on the ground
-            value = [F(2);F(4)];
-            isterminal = ones(2,1);
-            direction = -ones(2,1);
+   value = events;
+   isterminal = ones(4,1);
+   direction = -ones(4,1);
+
+end
+%% end of robot_events.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% Function to handle changing constraints %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% change_constraints.m
+%
+% Description:
+%   function to handle changes in constraints, depending on the current
+%   status of params.sim.constraints as well as ie, the index of the last
+%   event to occur
+%
+% Inputs:
+%   x_IC: the current state of the robot, which will be the initial
+%   conditions for the next segment of integration
+%   ie: the index of events returned by robot_events.m
+%
+% Outputs:
+%   x_IC: the current state of the robot, which might be updated if the
+%   event that occurred was a collision
+
+function [x_IC] = change_constraints(x_IC,ie)
+
+A = [];
+restitution = [];
+collision = 0;
+
+for i1 = 1:length(ie)
+    if params.sim.constraints.uni(ie(i1)) == 1  % if the event came from an active constraint
+        params.sim.constraints.uni(ie(i1)) = 0; % then make the constraint inactive
+    else    % the event came from an inactive constraint --> collision
+        collision = 1;
+        params.sim.constraints.uni(ie(i1)) = 1; % make the constraint active
+        % find the constraint jacobian
+        [~,A_unilateral,~,~] = constraint_derivatives(x_IC,params);
+        A = [A;A_unilateral(ie(i1),:)];
+        restitution = [restitution,1+params.sim.constraints.restitution(ie(i1))];
     end
+end
 
+if collision == 1
+    Minv = inv_mass_matrix(x_IC,params);
+    % compute the change in velo
+    x_IC(6:10) = x_IC(6:10) - (Minv*A'*inv(A*Minv*A')*diag(restitution)*A*x_IC(6:10)')';
+    % Often in a collision, the constraint forces will be violated
+    % immediately, rendering event detection useless since it requires a
+    % smoothly changing variable.  Therefore, we need to check the
+    % constraint forces and turn them off if they act in the wrong
+    % direction
+    [~,F] = robot_dynamics(0,x_IC');
+    for i1=1:4
+        if F(i1+2)<0, params.sim.constraints.uni(i1) = 0; end  % turn off unilateral constraints with negative forces
+    end
+end
 
 end
-%% end of robot_events.m 
-
+%% end of change_constraints.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 end
-%% End of main.m
+%% End of main.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

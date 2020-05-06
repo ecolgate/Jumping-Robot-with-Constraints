@@ -28,7 +28,7 @@ p = inputParser;
 addRequired(p,'robot_config', ...
     @(q) isnumeric(q_list) && size(q_list,1)==5);
 addRequired(p,'constraint_forces', ...
-    @(q) isnumeric(F_list) && size(F_list,1)==6);
+    @(q) isnumeric(F_list) && size(F_list,1)==4);
 addRequired(p,'robot_params', ...
     @(params) ~isempty(params));
 %   2b: optional inputs:
@@ -77,7 +77,6 @@ for i = 1:size(q_list,2)
     x_f = q(1);
     z_f = q(2);
     theta_f = q(3);
-    theta_s = q(4);
     F = F_list(:,i);
 
     if tracing
@@ -153,15 +152,18 @@ for i = 1:size(q_list,2)
         [FK_pivot,FK_tip] = fk_viz(q,params);
         % create vectors of x and z ends for both top and bottom
         xtop = [FK_tip(1), FK_tip(1)+spine.curr.force.top.x];
-        ztop = [FK_tip(2), FK_tip(2)+spine.curr.force.top.z];
-        xbot = [FK_pivot(1), FK_pivot(1)-spine.curr.force.bot.x];
-        zbot = [FK_pivot(2), FK_pivot(2)-spine.curr.force.bot.z];
+        ztop 
+        
+        spine.curr.tip.x = [spine.curr.tip.x, FK_tip(1)];
+        spine.curr.tip.z = [spine.curr.tip.z, FK_tip(2)];
+        pivot.curr.x = [pivot.curr.x, FK_pivot(1)];
+        pivot.curr.z = [pivot.curr.z, FK_pivot(2)];
+
+
         % draw the vectors
         hold on;
         line(xleft,zleft,'Color',params.viz.colors.vectors,'LineWidth',2)
         line(xright,zright,'Color',params.viz.colors.vectors,'LineWidth',2)
-        line(xtop,ztop,'Color',params.viz.colors.vectors,'LineWidth',2)
-        line(xbot,zbot,'Color',params.viz.colors.vectors,'LineWidth',2)
         hold off;
     end
 

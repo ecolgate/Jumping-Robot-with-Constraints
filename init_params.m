@@ -47,7 +47,7 @@ function params = init_params
     params.sim.ICs.foot.thetadot = 0;  % initial foot angular velocity
     params.sim.ICs.spine.thetadot = 0; % initial spine angular velocity relative to foot
     params.sim.ICs.body.thetadot = 0;  % initial motor angular velocity
-    params.sim.tfinal = 1;           % simulation timestep
+    params.sim.tfinal = 1.5;           % simulation final time
     params.sim.dt = 0.002;           % simulation timestep
     
     % package these up
@@ -63,9 +63,9 @@ function params = init_params
                     params.sim.ICs.body.thetadot];
 
     % variables related to the constraints
-    params.sim.constraints.number = 4;  % total number of constraint equations, bilateral and unilaterall
     % list of *unilateral* constraints: [left foot, right foot]   1 if active; 0 if inactive
-    params.sim.constraints = ['true','true'];   % initially, both left and right constraints are active 
+    params.sim.constraints.uni = [1,1,0,0];   % [c_lfz; c_rfz; c_top; c_bot] initially, both left and right foot constraints are active, but the spine constraints are not
+    params.sim.constraints.restitution = [0.0, 0.0, 0.0, 0.0];   % coefficients of restitution of the unilateral constraints
     
     % parameters relating to the motors
     params.motor.spine.peaktorque = 1.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
@@ -98,7 +98,7 @@ function params = init_params
     params.viz.colors.tracers.body_com = 'b';
     params.viz.colors.tracers.spine_tip = 'g';
     params.viz.colors.vectors = 'k';
-    params.viz.axis_lims = [-1,1,-0.5,3];
+    params.viz.axis_lims = [-1,1,-0.5,1.5];
     params.viz.dt = 0.01; % timestep for animation
     
     % home shape/configuration of foot with CoM at origin

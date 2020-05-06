@@ -11,16 +11,20 @@
 % Outputs:
 %   C_all = values of three constraint equations
 
-function [C_all] = constraints(x,params)
+function [C_bilateral,C_unilateral] = constraints(x,params)
 
 x_f = x(1);
 z_f = x(2);
 theta_f = x(3);
+theta_m = x(5);
 
+h_b = params.model.geom.body.h;
 h_f = params.model.geom.foot.hbot;
+l_spine = params.model.geom.spine.h;
+r = params.model.geom.body.r;
 w_f = params.model.geom.foot.w;
 
-C_all = autogen_constraints(h_f,theta_f,w_f,x_f,z_f);
+[C_bilateral,C_unilateral] = autogen_constraints(h_b,h_f,l_spine,r,theta_f,theta_m,w_f,x_f,z_f);
 
 end
 
