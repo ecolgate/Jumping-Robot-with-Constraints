@@ -72,7 +72,7 @@ function params = init_params
     % list of *unilateral* constraints: [left foot, right foot]   1 if active; 0 if inactive
     params.sim.constraints.active = logical([1 1 0 0]);   % [c_lf; c_rf; c_top; c_bot] initially, both left and right foot constraints are active, but the spine constraints are not
     params.sim.constraints.restitution = [0.0, 0.0, 0.0, 0.0];   % coefficients of restitution of the unilateral constraints
-    params.sim.constraints.gain = 500;
+    params.sim.constraints.gain = 1;
     
     % parameters relating to the motors
     params.motor.spine.peaktorque = 1.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
@@ -101,7 +101,7 @@ function params = init_params
     params.viz.colors.spine = [0.5 1.0 0.0];
     params.viz.colors.body = [153/255,153/255,153/255];
     params.viz.colors.com = [1 1 1];
-    params.viz.colors.trackers = 'r';
+    params.viz.colors
     params.viz.colors.tracers.foot_com = 'r';
     params.viz.colors.tracers.body_com = 'b';
     params.viz.colors.tracers.spine_tip = 'g';

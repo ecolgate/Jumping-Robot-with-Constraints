@@ -67,7 +67,7 @@ end
 % Begin with plot of ground reaction versus weight, to be sure we're
 % pushing off and then leaving the ground
 figure;
-plot(tsim,F_list(1,:)+F_list(2,:),'b-','LineWidth',2);  % this needs to be updated ... what I'm plotting isn't normal force
+plot(tsim,F_list(3,:)+F_list(4,:),'b-','LineWidth',2);
 hold on
 weight = (params.model.dyn.foot.m+params.model.dyn.spine.m+params.model.dyn.body.m)*params.model.dyn.g*ones(1,length(tsim));
 plot(tsim,weight,'r-','LineWidth',1);
@@ -86,7 +86,7 @@ tsim = cumsum(ones(size(tsim)))*eps + tsim;
 t_anim = 0:params.viz.dt:tsim(end);
 
 % 3) resample the state-vs-time array: 
-x_anim = interp1(tsim,xsim,t_anim); x_anim = x_anim';  % transpose so that xsim is 12xN (N = number of timesteps)
+x_anim = interp1(tsim,xsim,t_anim); x_anim = x_anim';  % transpose so that xsim is 10xN (N = number of timesteps)
 
 % 4) resample the constraint forces-vs-time array: 
 F_anim = interp1(tsim,F_list',t_anim); F_anim = F_anim';
@@ -94,7 +94,7 @@ F_anim = interp1(tsim,F_list',t_anim); F_anim = F_anim';
 % xsim = xsim';
 % animate_robot(xsim(1:5,:),F_list(1:4,:),params,'trace_foot_com',true,...
 %     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
-animate_robot(x_anim([1:5,11,12],:),F_anim,params,'trace_foot_com',true,...
+animate_robot(x_anim(1:5,:),F_anim,params,'trace_foot_com',true,...
     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
 fprintf('Done!\n');
 
@@ -169,14 +169,11 @@ else  % if there are constraints active, we must compute the constraint forces
     F_active = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);   % these are the constraint forces
     dx(1:nq) = (eye(nq) - A'*((A*A')\A))*x(nq+1:2*nq);
     dx(nq+1:2*nq) = Minv*(Q - H - A'*F_active);
-
-    % 4x1 vector of constraint forces
-    F(params.sim.constraints.active) = F_active;   
-
+        
 end
 
 % compute the pathlength derivatives for constraint tracking
-[r_l,r_r] = foot_coordinates(x,params);
+[r_l,r_r] = foot_coordinates(x,params)
 [v_l,v_r] = foot_velocities(x,params);
 [p_l,t_l,~] = track(s(1),params);
 [p_r,t_r,~] = track(s(2),params);
@@ -184,6 +181,8 @@ end
 dx(2*nq+1) = [v_l + params.sim.constraints.gain*(r_l - p_l)]'*t_l;
 dx(2*nq+2) = [v_r + params.sim.constraints.gain*(r_r - p_r)]'*t_r;
 
+% 4x1 vector of constraint forces
+F(params.sim.constraints.active) = F_active;   
 % events:  forces for active constraints, distances for inactive constraints
 C = constraints(x,params);
 events = F;

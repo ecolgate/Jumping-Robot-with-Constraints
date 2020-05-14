@@ -19,7 +19,7 @@
 %   none
 %
 
-function plot_robot(state,params,varargin)
+function plot_robot(q,params,varargin)
 %% Parse input arguments
 % Note: a simple robot plotting function doesn't need this, but I want to
 % write extensible code, so I'm using "varargin" which requires input
@@ -33,33 +33,28 @@ p = inputParser;
 % Step 2: create the parsing schema:
 %      2a: required inputs:
 addRequired(p,'robot_config', ...
-    @(q) isnumeric(q) && size(q,1)==7 && size(q,2)==1);
+    @(q) isnumeric(q) && size(q,1)==5 && size(q,2)==1);
 addRequired(p,'robot_params', ...
     @(params) ~isempty(params));
 %      2b: optional inputs:
 addParameter(p, 'new_fig', false); % if true, plot will be on a new figure
 
 % Step 3: parse the inputs:
-parse(p, state, params, varargin{:});
+parse(p, q, params, varargin{:});
 
 % Verification: display the results of parsing:
 % disp(p.Results)
 
 %% compute the track shape
-svec = linspace(-params.model.geom.track.r*pi/2,params.model.geom.track.r*pi/2,100);
-track_shape = zeros(2,length(svec));
-for i1=1:length(svec)
-    [track_shape(:,i1),~,~] = track(svec(i1),params);
-end
+svec = linspace(-params.model.geom.track.r*pi/2,params.model.geom.track.r*pi/2,50);
+for i
 
 %% for convenience, define each generalized coordinate
-x_f = state(1);
-z_f = state(2);
-theta_f = state(3);
-theta_s = state(4);
-theta_m = state(5);
-[p_l,~,~] = track(state(6),params);
-[p_r,~,~] = track(state(7),params);
+x_f = q(1);
+z_f = q(2);
+theta_f = q(3);
+theta_s = q(4);
+theta_m = q(5);
 
 %% Translate and rotate the foot into current configuration
 % Use a homogeneous transformation to translate the CoM and to rotate about the CoM:
@@ -72,7 +67,7 @@ foot.curr.corners = T_foot*params.foot.home.corners;
 
 %% Translate and rotate the spine into current configuration
 % use forward kinematics to get the proper translation
-[FK_com_s,FK_com_b] = fk_com(state,params);
+[FK_com_s,FK_com_b] = fk_com(q,params);
 % [FK_pivot,FK_tip] = fk_viz(q,params);
 
 % Use a homogeneous transformation to translate the CoM and to rotate about the CoM:
@@ -94,9 +89,8 @@ if p.Results.new_fig
     figure;
 end
 
-plot(track_shape(1,:),track_shape(2,:),'-k');
-hold on;
 fill(foot.curr.corners(1,:),foot.curr.corners(2,:),params.viz.colors.foot);
+hold on;
 fill(body.curr.corners(1,:),body.curr.corners(2,:),params.viz.colors.body);
 fill(spine.curr.corners(1,:),spine.curr.corners(2,:),params.viz.colors.spine);
 plot(x_f,z_f,'o','MarkerSize',6,...
@@ -105,12 +99,6 @@ plot(x_f,z_f,'o','MarkerSize',6,...
 plot(FK_com_b(1),FK_com_b(2),'o','MarkerSize',6,...
     'MarkerFaceColor',params.viz.colors.com,...
     'MarkerEdgeColor',params.viz.colors.com);
-plot(p_l(1),p_l(2),'o','MarkerSize',6,...
-    'MarkerFaceColor',params.viz.colors.trackers,...
-    'MarkerEdgeColor',params.viz.colors.trackers);
-plot(p_r(1),p_r(2),'o','MarkerSize',6,...
-    'MarkerFaceColor',params.viz.colors.trackers,...
-    'MarkerEdgeColor',params.viz.colors.trackers);
 hold off;
 
 axis(params.viz.axis_lims);

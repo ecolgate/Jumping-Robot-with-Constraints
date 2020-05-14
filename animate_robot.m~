@@ -127,21 +127,30 @@ for i = 1:size(state_list,2)
     end
     
     if p.Results.show_constraint_forces
+        % find the locations of the left and right bottom corners of the
+        % foot        
+        T_foot = [cos(theta_f),         -sin(theta_f),        x_f
+                  sin(theta_f),         cos(theta_f),         z_f
+                  0,                    0,                    1   ];
+        foot.curr.corners = T_foot*params.foot.home.corners;  % the ones we want are in rows 1&2 of columns 2&3
+        % compute the reaction forces at the two corners, assuming that the
+        % x-direction force is distributed between the two according to
+        % their z-direction (normal) forces
         Fscale = 2*params.model.geom.foot.hbot/params.model.dyn.body.m/params.model.dyn.g;  % scale factor for visualization
-        foot.curr.force.left.x = -n_l(1)*F(1)*Fscale;
-        foot.curr.force.left.z = -n_l(2)*F(1)*Fscale;
-        foot.curr.force.right.x = -n_r(1)*F(2)*Fscale;
-        foot.curr.force.right.z = -n_r(2)*F(2)*Fscale;
+        foot.curr.force.left.x = F(1)*Fscale;
+        foot.curr.force.left.z = F(3)*Fscale;
+        foot.curr.force.right.x = F(2)*Fscale;
+        foot.curr.force.right.z = F(4)*Fscale;
         % create vectors of x and z ends for both left and right
-        xleft = [p_l(1),p_l(1)+foot.curr.force.left.x];
-        zleft = [p_l(2),p_l(2)+foot.curr.force.left.z];
-        xright = [p_r(1),p_r(1)+foot.curr.force.right.x];
-        zright = [p_r(2),p_r(2)+foot.curr.force.right.z];
+        xleft = [foot.curr.corners(1,2),foot.curr.corners(1,2)+foot.curr.force.left.x];
+        zleft = [foot.curr.corners(2,2),foot.curr.corners(2,2)+foot.curr.force.left.z];
+        xright = [foot.curr.corners(1,3),foot.curr.corners(1,3)+foot.curr.force.right.x];
+        zright = [foot.curr.corners(2,3),foot.curr.corners(2,3)+foot.curr.force.right.z];
         % compute the reaction forces at the top and bottom of the spine
-        spine.curr.force.top.x = F(3)*sin(theta_f + theta_s)*Fscale;
-        spine.curr.force.top.z = F(3)*cos(theta_f + theta_s)*Fscale;
-        spine.curr.force.bot.x = F(4)*sin(theta_f + theta_s)*Fscale;
-        spine.curr.force.bot.z = F(4)*cos(theta_f + theta_s)*Fscale;
+        spine.curr.force.top.x = F(5)*sin(theta_f + theta_s)*Fscale;
+        spine.curr.force.top.z = F(5)*cos(theta_f + theta_s)*Fscale;
+        spine.curr.force.bot.x = F(6)*sin(theta_f + theta_s)*Fscale;
+        spine.curr.force.bot.z = F(6)*cos(theta_f + theta_s)*Fscale;
         % find the locations of the pivot and the spine tip
         [FK_pivot,FK_tip] = fk_viz(q,params);
         % create vectors of x and z ends for both top and bottom
