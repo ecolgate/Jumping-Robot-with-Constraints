@@ -33,7 +33,7 @@ function params = init_params
     params.model.dyn.body.m = 2.5;  % kg -- most of the mass is concentrated in the body
     params.model.dyn.body.J = params.model.dyn.body.m*(params.model.geom.body.h^2 + params.model.geom.body.w^2)/12;
     params.model.dyn.body.Jm = 53.8e-7; % kg-m^2  moment of inertia of Maxon EC40 motor
-    params.model.dyn.K = 10;        % Nm/rad rotational stiffness of spring
+    params.model.dyn.K = 25;        % Nm/rad rotational stiffness of spring
     params.model.dyn.g = 9.81;      % acceleration due to gravity
     
     % parameters related to simulating (integrating) the dynamics forward
@@ -45,14 +45,13 @@ function params = init_params
     params.sim.ICs.foot.z = params.model.geom.foot.hbot + params.model.geom.track.r*(1-cos(theta));  % initial foot z position
     params.sim.ICs.foot.theta = 0;  % initial foot angle
     params.sim.ICs.spine.theta = 0; % initial spine angle relative to foot
-    params.sim.ICs.body.theta = params.model.geom.body.h/params.model.geom.body.r/2;  % initial motor angle
-    params.sim.ICs.foot.xdot = 0.1;   % initial foot x velocity
+    params.sim.ICs.body.theta = params.model.geom.spine.h/params.model.geom.body.r/2;  % initial motor angle
+    params.sim.ICs.foot.xdot = 1.0;   % initial foot x velocity
     params.sim.ICs.foot.zdot = 0;   % initial foot z velocity
-    params.sim.ICs.foot.thetadot = 0;  % initial foot angular velocity
+    params.sim.ICs.foot.thetadot = params.sim.ICs.foot.xdot/params.model.geom.track.r;  % initial foot angular velocity
     params.sim.ICs.spine.thetadot = 0; % initial spine angular velocity relative to foot
     params.sim.ICs.body.thetadot = 0;  % initial motor angular velocity
-    params.sim.tfinal = 1.5;           % simulation final time
-    params.sim.dt = 0.002;           % simulation timestep
+    params.sim.tfinal = 6;           % simulation final time
     
     % package these up
     params.x_IC = [params.sim.ICs.foot.x;
@@ -77,24 +76,22 @@ function params = init_params
     % parameters relating to the motors
     params.motor.spine.peaktorque = 1.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
     params.motor.body.peaktorque = 0.3; % Nm  assumes Maxon EC40
-    % motor torques over time:
-        % create a timeline for use here
-        tfinal = params.sim.tfinal;
-        dt = params.sim.dt;
-    % push the spine cw against the spring
-    params.motor.spine.time = 0:dt:tfinal;
-    params.motor.spine.torque = 0*params.motor.spine.peaktorque*ones(1,length(params.motor.spine.time)); % push the spine cw against the spring
-    params.motor.spine.torque(1) = 0;  % make the initial torque zero
-    % push the body upward as hard as possible then brake
-    params.motor.body.time1 = 0:dt:.183;
-    params.motor.body.torque1 = params.motor.body.peaktorque*ones(1,length(params.motor.body.time1)); 
-    params.motor.body.torque1(1) = params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r;  % make the initial torque enough to hold up body
-    params.motor.body.time2 = .183+dt:dt:.25;
-    params.motor.body.torque2 = -2*params.motor.body.peaktorque*ones(1,length(params.motor.body.time2));
-    params.motor.body.time3 = .25+dt:dt:tfinal;
-    params.motor.body.torque3 = .2*params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r*ones(1,length(params.motor.body.time3));
-    params.motor.body.time = horzcat(params.motor.body.time1,params.motor.body.time2,params.motor.body.time3);
-    params.motor.body.torque = horzcat(params.motor.body.torque1,params.motor.body.torque2,params.motor.body.torque3);
+    
+    % parameters relating to the control
+    params.control.dt = .005;        % controller time step
+    params.control.delay = 0.5*params.control.dt;  % commmunication and computation delay
+    % spine joint angle controller
+    params.control.theta_s_des = 0;    
+    params.control.spine.kp = 5;
+    params.control.spine.kd = 1;
+    % body motor joint angle controller
+    params.control.theta_m_high = (params.model.geom.spine.h - .1)/params.model.geom.body.r;    
+    params.control.theta_m_low = (params.model.geom.body.h)/params.model.geom.body.r;    
+    params.control.body.kp = .01;
+    params.control.body.kd = 10e-4;
+    % foot angle estimator
+    params.control.foot.tau = 10*params.control.dt;  % time constant for theta_f filter
+    params.control.foot.alpha = params.control.foot.tau/(params.control.foot.tau+params.control.dt);
     
     % parameters related to plotting and animation
     params.viz.colors.foot = [1.0 166/255 0.0];

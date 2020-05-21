@@ -65,7 +65,8 @@ end
 
 % if video is desired...
 if p.Results.video
-    v = VideoWriter('pushoff.avi');
+    v = VideoWriter('pump_up.avi');
+    v.FrameRate = 1/params.viz.dt;
     open(v);
 end
 

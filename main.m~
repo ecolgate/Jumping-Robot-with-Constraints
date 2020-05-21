@@ -21,58 +21,101 @@ init_env();
 %% Initialize parameters
 params = init_params;
 
-%% Set up events using odeset
-options = odeset('Events',@robot_events);
+%% Set max time step using odeset
+options = odeset('MaxStep',params.control.dt);
 
 %% Simulate the robot forward in time 
 x_IC = params.x_IC';    % initial conditions
-tnow = 0.0;             % starting time
+u = [0;0];              % initial command
 
-% start with null matrices for holding results -- we'll be adding to these
-% with each segment of the simulation
+%% initialize controller memory
+memory.u = u;
+memory.y = zeros(5,1);
+memory.est1_theta_f = 0;
+memory.filt1_theta_f = 0;
+memory.est2_theta_f = 0;
+memory.filt2_theta_f = 0;
+
+%% set up control timing
+t_write = 0.0;          % starting time
+dt = params.control.dt; % controller time step
+
+%% start with null matrices for holding results 
 tsim = [];
 xsim = [];
+Psim = [];
 F_list = [];
+usim = [];
+tcontrol = [];
+theta_f_estc = [];
 
-% create a place for events
-events = [];
+%% the main loop
+while t_write < params.sim.tfinal
+    
+    % simulate the plant from this write to the next write
+    tspan = [t_write, t_write+dt];
+    [tseg,xseg,Fseg,Pseg] = analog_plant(tspan,u,x_IC);
+    
+    % find the state at the time a read was made
+    t_read = tseg(end) - params.control.delay;
+    x_read = interp1(tseg,xseg,t_read);
+    
+    % compute the control 
+    [u,memory] = digital_controller(t_read,x_read,memory);
+    
+    % update t_write and x_IC for next iteration
+    t_write = tseg(end);
+    x_IC = xseg(end,:); 
 
-% the main loop
-while tnow < params.sim.tfinal
-
-    tspan = [tnow params.sim.tfinal];
-    [tseg, xseg, ~, ~, ie] = ode45(@robot_dynamics, tspan, x_IC, options);
-
-    % augment tsim and xsim; renew ICs
+    % store variables for plotting   
+    % variables based off of tsim
     tsim = [tsim;tseg];
     xsim = [xsim;xseg];
-    tnow = tsim(end);
-    x_IC = xsim(end,:); 
-    
-    % compute the constraint forces that were active during the jump
-    Fseg = zeros(4,length(tseg));
-    for i=1:length(tseg)
-        [~,Fseg(:,i)] = robot_dynamics(tseg(i),xseg(i,:)');
-    end
-    F_list = [F_list,Fseg];
-    
-    % if simulation terminated before tfinal, update the constraints and, if necessary, the velocities
-    if tseg(end) < params.sim.tfinal  % termination was triggered by an event
-        [x_IC] = change_constraints(x_IC,ie);
-    end
-    
+    F_list = [F_list;Fseg'];
+    Psim = [Psim;Pseg];
+    % variables based off of tcontrol, not tsim
+    tcontrol = [tcontrol;t_read];
+    usim = [usim;u];
+    theta_f_estc = [theta_f_estc;memory.filt1_theta_f+memory.filt2_theta_f];  % CHECK THIS
+        
 end
 
+%% compute total energy as a function of time
+ntsim = length(tsim);
+Energy = zeros(1,ntsim-1);
+KineticEnergy = zeros(1,ntsim-1);
+PotentialEnergy = zeros(1,ntsim-1);
+NetEnergy = zeros(1,ntsim-1);
+actuator_work = 0;
+for i=1:ntsim-1
+    actuator_work = actuator_work + Psim(i+1)*(tsim(i+1)-tsim(i));
+    Energy(i) = total_energy(xsim(i,:)',params);
+    [KineticEnergy(i),PotentialEnergy(i)] = energy(xsim(i,:)',params);
+    NetEnergy(i) = Energy(i) - actuator_work;
+end
+
+
 %%  Plot Results %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Begin with plot of ground reaction versus weight, to be sure we're
-% pushing off and then leaving the ground
+% plot energy
 figure;
-plot(tsim,F_list(3,:)+F_list(4,:),'b-','LineWidth',2);
-hold on
-weight = (params.model.dyn.foot.m+params.model.dyn.spine.m+params.model.dyn.body.m)*params.model.dyn.g*ones(1,length(tsim));
-plot(tsim,weight,'r-','LineWidth',1);
-ylabel('Ground Reaction vs Weight (N)')
+plot(tsim(1:ntsim-1),Energy,'k-','LineWidth',2);
+hold on;
+plot(tsim(1:ntsim-1),NetEnergy,'r-','LineWidth',2);
+plot(tsim(1:ntsim-1),KineticEnergy,'g-','LineWidth',2);
+plot(tsim(1:ntsim-1),PotentialEnergy,'b-','LineWidth',2);
+hold off
+ylabel('Energy (J)')
 xlabel('time (sec)')
+legend('Total Energy','Net Energy','Kinetic Energy','Potential Energy')
+
+% plot foot angle versus estimate
+figure;
+plot(tsim,xsim(:,3),'k-','LineWidth',2);  
+hold on
+plot(tcontrol,theta_f_estc,'r-','LineWidth',1);
+ylabel('Foot Angle versus Estimate')
+xlabel('time (sec)')
+legend('Foot Angle','Estimate')
 hold off
 
 %% Animate Results %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -80,26 +123,24 @@ hold off
 % points in (time,state). 
 % 1) deal with possible duplicatetimes in tsim: 
 % (https://www.mathworks.com/matlabcentral/answers/321603-how-do-i-interpolate-1d-data-if-i-do-not-have-unique-values
-tsim = cumsum(ones(size(tsim)))*eps + tsim;
+tsim = cumsum(ones(size(tsim)))*10*eps + tsim;
 
 % 2) resample the duplicate-free time vector: 
 t_anim = 0:params.viz.dt:tsim(end);
 
 % 3) resample the state-vs-time array: 
-x_anim = interp1(tsim,xsim,t_anim); x_anim = x_anim';  % transpose so that xsim is 10xN (N = number of timesteps)
+x_anim = interp1(tsim,xsim,t_anim); x_anim = x_anim';  % transpose so that xsim is 12xN (N = number of timesteps)
 
 % 4) resample the constraint forces-vs-time array: 
-F_anim = interp1(tsim,F_list',t_anim); F_anim = F_anim';
+F_anim = interp1(tsim,F_list,t_anim); F_anim = F_anim';
 
-% xsim = xsim';
-% animate_robot(xsim(1:5,:),F_list(1:4,:),params,'trace_foot_com',true,...
-%     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
-animate_robot(x_anim(1:5,:),F_anim,params,'trace_foot_com',true,...
+animate_robot(x_anim([1:5,11,12],:),F_anim,params,'trace_foot_com',true,...
     'trace_body_com',true,'trace_spine_tip',true,'show_constraint_forces',true,'video',true);
+
 fprintf('Done!\n');
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% end of main.m, except for nested functions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% end of main.m, except for nested functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 
@@ -109,7 +150,141 @@ fprintf('Done!\n');
 %% BELOW HERE ARE THE NESTED FUNCTIONS, ROBOT_DYNAMICS, ROBOT_EVENTS, AND CHANGE_CONSTRAINTS
 %% THEY HAVE ACCESS TO ALL VARIABLES IN MAIN
 
-%% robot_dynamics.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% digital_controller.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Description:
+%   Computes the torque commands to the two motors 
+%
+% Inputs:
+%   t_read: time at which sensors are read
+%   x_read: the 12x1 state vector at the time of a read (note that not all
+%   of the state is actually read ... we must determine the sensor readings
+%   from x_read)
+%   memory: a struct that holds stored variables
+%
+% Outputs:
+%   u: the two torque commands
+%   memory: a struct that holds stored variables
+
+function [u,memory] = digital_controller(t_read,x_read,memory)
+    
+    % figure out what sensors can see
+    % NOTE:  right now, sensors are "perfect" -- no noise or quantization.
+    % That *should* be added!
+    y = zeros(5,1);
+    % assume encoders for spine angle and body motor angle
+    y(1:2) = x_read(4:5);   % theta_s and theta_m
+    % assume gyro for foot angular velocity 
+    y(3) = x_read(8);
+    % assume that two axes of acceleration are measured in the frame of the
+    % foot.  y(4) is the x-axis acceleration when the foot is flat
+    % y(5) is the z-axis acceleration (including gravity) when the foot is
+    % flat
+    theta_f = x_read(3);
+    rot = [cos(theta_f), sin(theta_f); -sin(theta_f), cos(theta_f)];
+    [dx,~] = robot_dynamics(t_read,x_read',memory.u);
+    accel_actual = [dx(6);dx(7)-params.model.dyn.g];
+    y(4:5) = rot*accel_actual;       % measured accelerations
+    
+    % estimate theta_s_dot and theta_m_dot by backwards difference
+    % differentiation
+    % NOTE: some low pass filtering should probably be added
+    est_theta_s_dot = (y(1) - memory.y(1))/params.control.dt;
+    est_theta_m_dot = (y(2) - memory.y(2))/params.control.dt;
+    
+    % estimate theta_f from IMU readings
+    % two approaches:  1) integrate theta_f_dot;  2) use the measured
+    % accelerations and the knowledge of track shape to estimate it.  This
+    % approach depends on a model, but doesn't have the problem of drift
+    %
+    % Approach 1:  Integrate gyro
+    est1_theta_f = memory.est1_theta_f + y(3)*params.control.dt;
+    %
+    % Approach 2:  Use gyro + acceleration + model of track
+    theta_f_ddot = (y(3) - memory.y(3))/params.control.dt;  % foot angular acceleration
+    rtrack = params.model.geom.track.r;  % radius of track
+    est2_theta_f = atan2(rtrack*theta_f_ddot - y(4),rtrack*y(3)^2 - y(5));
+    %
+    % Combined Estimate: high pass est1, low pass est2, and add
+    filt1_theta_f = params.control.foot.alpha*(memory.filt1_theta_f + est1_theta_f - memory.est1_theta_f);
+    filt2_theta_f = params.control.foot.alpha*memory.filt2_theta_f + (1-params.control.foot.alpha)*est2_theta_f;
+    est_combined_theta_f = filt1_theta_f + filt2_theta_f;
+    
+    % PUMP!!!  Based on theta_f and theta_f_dot, move body up or down
+    if est_combined_theta_f>=0 && y(3)>=0
+        theta_m_des = params.control.theta_m_high;
+    elseif est_combined_theta_f>=0 && y(3)<0
+        theta_m_des = params.control.theta_m_low;
+    elseif est_combined_theta_f<0 && y(3)<0
+        theta_m_des = params.control.theta_m_high;
+    else
+        theta_m_des = params.control.theta_m_low;  
+    end
+        
+    % Compute u with PD control
+    % NOTE: the desired velocity here is always zero.  Basically, we are
+    % moving the robot from one fixed pose to another.  LQR is also a good
+    % approach to this.
+    u(2,1) = params.control.body.kp*(theta_m_des - y(2)) + ...
+        params.control.body.kd*(0 - est_theta_m_dot);
+    u(1,1) = params.control.spine.kp*(params.control.theta_s_des - y(1)) + ...
+        params.control.spine.kd*(0 - est_theta_s_dot);  % - u(2,1);
+    
+    % Saturate u (i.e., observe actuator limitations!)
+    if abs(u(1)) > params.motor.spine.peaktorque
+        u(1) = params.motor.spine.peaktorque*sign(u(1));
+    end
+    if abs(u(2)) > params.motor.body.peaktorque
+        u(2) = params.motor.body.peaktorque*sign(u(2));
+    end
+    
+    % Update memory (these are values that the Tiva would store)
+    memory.u = u;
+    memory.y = y;
+    memory.est1_theta_f = est1_theta_f;
+    memory.est2_theta_f = est2_theta_f;
+    memory.filt1_theta_f = filt1_theta_f;
+    memory.filt2_theta_f = filt2_theta_f;
+    
+end
+%% end of digital_controller.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% analog_plant.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Description:
+%   Updates the state of the robot (and, in future, motor torques) over a
+%   time span typically consisting of one ZOH period.
+%
+%   Also computes the constraint forces
+%
+% Inputs:
+%   tspan: [start time, end time]
+%   u: torque commands
+%   x_IC: the 12x1 state vector at the start time
+%
+% Outputs:
+%   tseg: the vector of times at which states were computed
+%   xseg: the states at those times
+%   Fseg: the constraint forces at those times
+
+function [tseg,xseg,Fseg,Pseg] = analog_plant(tspan,u,x_IC)
+
+    [tseg, xseg] = ode45(@(t,x) robot_dynamics(t,x,u), tspan, x_IC);
+
+    % compute the actuator power that was applied/drawn during segment
+    Pseg = u(1)*xseg(:,9) + u(2)*xseg(:,10);
+
+    % compute the constraint forces that were active during the segment
+    Fseg = zeros(4,length(tseg));
+    for i=1:length(tseg)
+        [~,Fseg(:,i)] = robot_dynamics(tseg(i),xseg(i,:)',u);
+    end
+
+end
+%% end of analog_plant.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% robot_dynamics.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % Description:
 %   Computes the constraint forces: 
@@ -118,155 +293,67 @@ fprintf('Done!\n');
 %   Also computes the derivative of the state:
 %       x_dot(1:5) = (I - A'*inv(A*A')*A)*x(6:10)
 %       x_dot(6:10) = inv(M)*(Q - H - A'F)
+%       x_dot(11:12) = [ds_left; ds_right];
 %
 % Inputs:
 %   t: time (scalar)
 %   x: the 10x1 state vector
-%   params: a struct with many elements, generated by calling init_params.m
+%   u: the 2x1 motor torque commands
 %
 % Outputs:
 %   dx: derivative of state x with respect to time.
-%   F:  6x1 vector of constraint forces
+%   F:  4x1 vector of constraint forces
 
-function [dx,F] = robot_dynamics(~,x)
+function [dx,F] = robot_dynamics(~,x,u)
 
-dx = zeros(numel(x),1);
-nq = numel(x)/2-1;    % assume that x = [q;q_dot;sl;sr];
-% for convenience, define q_dot and s
-q_dot = x(nq+1:2*nq);
-s = x(2*nq+1:2*nq+2);
+    dx = zeros(numel(x),1);
+    nq = numel(x)/2-1;    % assume that x = [q;q_dot;sl;sr];
+    % for convenience, define q_dot and s
+    q_dot = x(nq+1:2*nq);
+    s = x(2*nq+1:2*nq+2);
 
-% if both feet are on ground and body hasn't hit top, then apply max torque
-if params.sim.constraints.active(1) && params.sim.constraints.active(2) && ~params.sim.constraints.active(3)
-    Q = [0;0;0;0;.5*params.motor.body.peaktorque];
-else  % otherwise, apply no torque at all
-    Q = zeros(5,1);
-end
+    % set up generalized forces based on motor torques
+    Q = [0;0;0;u];
 
-% find the parts that don't depend on constraint forces
-H = H_eom(x,params);
-Minv = inv_mass_matrix(x,params);
-[A,Hessian] = constraint_derivatives(x,params);
+    % compute the pathlength derivatives for constraint tracking
+    [r_l,r_r] = foot_coordinates(x,params);
+    [v_l,v_r] = foot_velocities(x,params);
+    % alternate way to get pathlength
+    % x(11) = params.model.geom.track.r*atan(r_l(1)/(params.model.geom.track.r-r_l(2)));
+    % x(12) = params.model.geom.track.r*atan(r_r(1)/(params.model.geom.track.r-r_r(2)));
+    [p_l,t_l,~] = track(s(1),params);
+    [p_r,t_r,~] = track(s(2),params);
 
-% solve for constraint forces, if any; compute velocities and accelerations
-F = zeros(4,1);
-n_active_constraints = sum(params.sim.constraints.active);  % number of active constraints
+    % find the parts that don't depend on constraint forces
+    H = H_eom(x,params);
+    M = mass_matrix(x,params);
+    Minv = inv(M);
+    [A,Hessian] = constraint_derivatives(x,params);
 
-if n_active_constraints == 0  % if there are no constraints active, then there are no forces
-    
-    dx(1:nq) = q_dot;
-    dx(nq+1:2*nq) = Minv*(Q - H);
-    
-else  % if there are constraints active, we must compute the constraint forces
+    % solve for constraint forces, if any; compute velocities and accelerations
+    n_active_constraints = sum(params.sim.constraints.active);
     A = A(params.sim.constraints.active,:);   % eliminate inactive rows
     Hessian_active = Hessian(:,:,params.sim.constraints.active);  % eliminate inactive hessians
     Adotqdot = zeros(n_active_constraints,1);
     for ic=1:n_active_constraints
         Adotqdot(ic) = q_dot'*Hessian_active(:,:,ic)*q_dot;
     end
-    
+
     % compute the constraint forces and accelerations
-    F_active = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot);   % these are the constraint forces
-    dx(1:nq) = (eye(nq) - A'*((A*A')\A))*x(nq+1:2*nq);
-    dx(nq+1:2*nq) = Minv*(Q - H - A'*F_active);
-        
-end
+    F_active = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot); % these are the constraint forces
+    dx(1:nq) = (eye(nq) - A'*((A*A')\A))*q_dot;  
+    dx(nq+1:2*nq) = Minv*(Q - H - A'*F_active) - A'*((A*A')\A)*q_dot/params.control.dt;
 
-% compute the pathlength derivatives for constraint tracking
-[r_l,r_r] = foot_coordinates(x,params)
-[v_l,v_r] = foot_velocities(x,params);
-[p_l,t_l,~] = track(s(1),params);
-[p_r,t_r,~] = track(s(2),params);
+    % 4x1 vector of constraint forces
+    F = zeros(4,1);
+    F(params.sim.constraints.active) = F_active;   
 
-dx(2*nq+1) = [v_l + params.sim.constraints.gain*(r_l - p_l)]'*t_l;
-dx(2*nq+2) = [v_r + params.sim.constraints.gain*(r_r - p_r)]'*t_r;
-
-% 4x1 vector of constraint forces
-F(params.sim.constraints.active) = F_active;   
-% events:  forces for active constraints, distances for inactive constraints
-C = constraints(x,params);
-events = F;
-events(~params.sim.constraints.active) = -C(~params.sim.constraints.active);
+    dx(2*nq+1) = (v_l + params.sim.constraints.gain*(r_l - p_l))'*t_l;
+    dx(2*nq+2) = (v_r + params.sim.constraints.gain*(r_r - p_r))'*t_r;
 
 end
 %% end of robot_dynamics.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-%% Event function for ODE45 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Description:
-%   Event function that is called when a constraint becomes active or inactive
-%
-% Inputs:
-%   t and x are required, but not used
-%   events is shared with parent function
-%
-% Outputs:
-%   value
-%   isterminal
-%   direction
-function [value,isterminal,direction] = robot_events(~,~)
-
-   value = events;
-   isterminal = ones(4,1);
-   direction = -ones(4,1);
-
-end
-%% end of robot_events.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-%% Function to handle changing constraints %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% change_constraints.m
-%
-% Description:
-%   function to handle changes in constraints, depending on the current
-%   status of params.sim.constraints as well as ie, the index of the last
-%   event to occur
-%
-% Inputs:
-%   x_IC: the current state of the robot, which will be the initial
-%   conditions for the next segment of integration
-%   ie: the index of events returned by robot_events.m
-%
-% Outputs:
-%   x_IC: the current state of the robot, which might be updated if the
-%   event that occurred was a collision
-
-function [x_IC] = change_constraints(x_IC,ie)
-
-A = [];
-restitution = [];
-collision = 0;
-
-for i1 = 1:length(ie)  % I'm not sure if ie is ever a vector ... just being sure!
-    if params.sim.constraints.active(ie(i1))  % if the event came from an active constraint
-        params.sim.constraints.active(ie(i1)) = 0; % then make the constraint inactive
-    else    % the event came from an inactive constraint --> collision
-        collision = 1;
-        params.sim.constraints.active(ie(i1)) = 1; % make the constraint active
-        % find the constraint jacobian
-        [A_unilateral,~] = constraint_derivatives(x_IC,params);
-        A = [A;A_unilateral(ie(i1),:)];
-        restitution = [restitution,1+params.sim.constraints.restitution(ie(i1))];
-    end
-end
-
-if collision == 1
-    Minv = inv_mass_matrix(x_IC,params);
-    % compute the change in velocity due to collision impulses
-    x_IC(6:10) = x_IC(6:10) - (Minv*A'*inv(A*Minv*A')*diag(restitution)*A*x_IC(6:10)')';
-    % Often in a collision, the constraint forces will be violated
-    % immediately, rendering event detection useless since it requires a
-    % smoothly changing variable.  Therefore, we need to check the
-    % constraint forces and turn them off if they act in the wrong
-    % direction
-    [~,F] = robot_dynamics(0,x_IC');
-    for i1=1:4
-        if F(i1)<0, params.sim.constraints.active(i1) = 0; end  % turn off unilateral constraints with negative forces
-    end
-end
-
-end
-%% end of change_constraints.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 end
 %% End of main.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

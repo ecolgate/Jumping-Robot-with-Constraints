@@ -45,14 +45,13 @@ function params = init_params
     params.sim.ICs.foot.z = params.model.geom.foot.hbot + params.model.geom.track.r*(1-cos(theta));  % initial foot z position
     params.sim.ICs.foot.theta = 0;  % initial foot angle
     params.sim.ICs.spine.theta = 0; % initial spine angle relative to foot
-    params.sim.ICs.body.theta = params.model.geom.body.h/params.model.geom.body.r/2;  % initial motor angle
-    params.sim.ICs.foot.xdot = 0.1;   % initial foot x velocity
+    params.sim.ICs.body.theta = params.model.geom.spine.h/params.model.geom.body.r/2;  % initial motor angle
+    params.sim.ICs.foot.xdot = 1.0;   % initial foot x velocity
     params.sim.ICs.foot.zdot = 0;   % initial foot z velocity
     params.sim.ICs.foot.thetadot = 0;  % initial foot angular velocity
     params.sim.ICs.spine.thetadot = 0; % initial spine angular velocity relative to foot
     params.sim.ICs.body.thetadot = 0;  % initial motor angular velocity
     params.sim.tfinal = 1.5;           % simulation final time
-    params.sim.dt = 0.002;           % simulation timestep
     
     % package these up
     params.x_IC = [params.sim.ICs.foot.x;
@@ -72,36 +71,30 @@ function params = init_params
     % list of *unilateral* constraints: [left foot, right foot]   1 if active; 0 if inactive
     params.sim.constraints.active = logical([1 1 0 0]);   % [c_lf; c_rf; c_top; c_bot] initially, both left and right foot constraints are active, but the spine constraints are not
     params.sim.constraints.restitution = [0.0, 0.0, 0.0, 0.0];   % coefficients of restitution of the unilateral constraints
-    params.sim.constraints.gain = 1;
+    params.sim.constraints.gain = 500;
     
     % parameters relating to the motors
     params.motor.spine.peaktorque = 1.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
     params.motor.body.peaktorque = 0.3; % Nm  assumes Maxon EC40
-    % motor torques over time:
-        % create a timeline for use here
-        tfinal = params.sim.tfinal;
-        dt = params.sim.dt;
-    % push the spine cw against the spring
-    params.motor.spine.time = 0:dt:tfinal;
-    params.motor.spine.torque = 0*params.motor.spine.peaktorque*ones(1,length(params.motor.spine.time)); % push the spine cw against the spring
-    params.motor.spine.torque(1) = 0;  % make the initial torque zero
-    % push the body upward as hard as possible then brake
-    params.motor.body.time1 = 0:dt:.183;
-    params.motor.body.torque1 = params.motor.body.peaktorque*ones(1,length(params.motor.body.time1)); 
-    params.motor.body.torque1(1) = params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r;  % make the initial torque enough to hold up body
-    params.motor.body.time2 = .183+dt:dt:.25;
-    params.motor.body.torque2 = -2*params.motor.body.peaktorque*ones(1,length(params.motor.body.time2));
-    params.motor.body.time3 = .25+dt:dt:tfinal;
-    params.motor.body.torque3 = .2*params.model.dyn.body.m*params.model.dyn.g*params.model.geom.body.r*ones(1,length(params.motor.body.time3));
-    params.motor.body.time = horzcat(params.motor.body.time1,params.motor.body.time2,params.motor.body.time3);
-    params.motor.body.torque = horzcat(params.motor.body.torque1,params.motor.body.torque2,params.motor.body.torque3);
+    
+    % parameters relating to the control
+    params.control.dt = .002;        % controller time step
+    params.control.delay = 0.5*params.control.dt;
+    
+    params.control.theta_s_des = 0;    
+    params.control.spine.kp = 0;
+    params.control.spine.kd = .12;
+    params.control.theta_m_high = (params.model.geom.spine.h - .05)/params.model.geom.body.r;    
+    params.control.theta_m_low = (params.model.geom.body.h + .05)/params.model.geom.body.r;    
+    params.control.body.kp = .14;
+    params.control.body.kd = 16e-4;
     
     % parameters related to plotting and animation
     params.viz.colors.foot = [1.0 166/255 0.0];
     params.viz.colors.spine = [0.5 1.0 0.0];
     params.viz.colors.body = [153/255,153/255,153/255];
     params.viz.colors.com = [1 1 1];
-    params.viz.colors
+    params.viz.colors.trackers = 'r';
     params.viz.colors.tracers.foot_com = 'r';
     params.viz.colors.tracers.body_com = 'b';
     params.viz.colors.tracers.spine_tip = 'g';
