@@ -56,12 +56,13 @@ while t_write < params.sim.tfinal
     tspan = [t_write, t_write+dt];
     [tseg,xseg,Fseg,Pseg] = analog_plant(tspan,u,x_IC);
     
-    % find the state at the time a read was made
+    % find the state and sensor measurements at the time a read was made
     t_read = tseg(end) - params.control.delay;
     x_read = interp1(tseg,xseg,t_read);
+    y = sensor(t_read,x_read,u);
     
     % compute the control 
-    [u,memory] = digital_controller(t_read,x_read,memory);
+    [u,memory] = digital_controller(y,memory);
     
     % update t_write and x_IC for next iteration
     t_write = tseg(end);
@@ -145,11 +146,47 @@ fprintf('Done!\n');
 
 
 
-
-
-%% BELOW HERE ARE THE NESTED FUNCTIONS, ROBOT_DYNAMICS, ROBOT_EVENTS, AND CHANGE_CONSTRAINTS
+%% BELOW HERE ARE THE NESTED FUNCTIONS, DIGITAL_CONTROLLER, ANALOG_PLANT, AND ROBOT_DYNAMICS
 %% THEY HAVE ACCESS TO ALL VARIABLES IN MAIN
 
+%% sensor.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Description:
+%   Computes the sensor values that are sent to the digital controller 
+%
+% Inputs:
+%   t_read: time at which sensors are read
+%   x_read: the 12x1 state vector at the time of a read (note that not all
+%   of the state is actually read ... we must determine the sensor readings
+%   from x_read)
+%   u: the control inputs (used here because we have to call
+%   robot_dynamics)
+%
+% Outputs:
+%   y: the sensor values
+
+function [y] = sensor(t_read,x_read,u)
+    
+    % NOTE:  right now, sensors are "perfect" -- no noise or quantization.
+    % That *should* be added!
+    y = zeros(5,1);
+    % assume encoders for spine angle and body motor angle
+    y(1:2) = x_read(4:5);   % theta_s and theta_m
+    % assume gyro for foot angular velocity 
+    y(3) = x_read(8);
+    % assume that two axes of acceleration are measured in the frame of the
+    % foot.  y(4) is the x-axis acceleration when the foot is flat
+    % y(5) is the z-axis acceleration (including gravity) when the foot is
+    % flat
+    theta_f = x_read(3);
+    rot = [cos(theta_f), sin(theta_f); -sin(theta_f), cos(theta_f)];
+    [dx,~] = robot_dynamics(t_read,x_read',u);
+    accel_actual = [dx(6);dx(7)-params.model.dyn.g];
+    y(4:5) = rot*accel_actual;       % measured accelerations
+    
+end
+%% end of sensor.m
+    
 %% digital_controller.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % Description:
@@ -166,25 +203,7 @@ fprintf('Done!\n');
 %   u: the two torque commands
 %   memory: a struct that holds stored variables
 
-function [u,memory] = digital_controller(t_read,x_read,memory)
-    
-    % figure out what sensors can see
-    % NOTE:  right now, sensors are "perfect" -- no noise or quantization.
-    % That *should* be added!
-    y = zeros(5,1);
-    % assume encoders for spine angle and body motor angle
-    y(1:2) = x_read(4:5);   % theta_s and theta_m
-    % assume gyro for foot angular velocity 
-    y(3) = x_read(8);
-    % assume that two axes of acceleration are measured in the frame of the
-    % foot.  y(4) is the x-axis acceleration when the foot is flat
-    % y(5) is the z-axis acceleration (including gravity) when the foot is
-    % flat
-    theta_f = x_read(3);
-    rot = [cos(theta_f), sin(theta_f); -sin(theta_f), cos(theta_f)];
-    [dx,~] = robot_dynamics(t_read,x_read',memory.u);
-    accel_actual = [dx(6);dx(7)-params.model.dyn.g];
-    y(4:5) = rot*accel_actual;       % measured accelerations
+function [u,memory] = digital_controller(y,memory)
     
     % estimate theta_s_dot and theta_m_dot by backwards difference
     % differentiation
@@ -270,6 +289,10 @@ end
 
 function [tseg,xseg,Fseg,Pseg] = analog_plant(tspan,u,x_IC)
 
+    % NOTE: consider adding a model of motor dynamics:  right now, we
+    % assume that applied torque = commanded torque
+    
+    % integrate the robot dyamics
     [tseg, xseg] = ode45(@(t,x) robot_dynamics(t,x,u), tspan, x_IC);
 
     % compute the actuator power that was applied/drawn during segment
@@ -315,19 +338,10 @@ function [dx,F] = robot_dynamics(~,x,u)
     % set up generalized forces based on motor torques
     Q = [0;0;0;u];
 
-    % compute the pathlength derivatives for constraint tracking
-    [r_l,r_r] = foot_coordinates(x,params);
-    [v_l,v_r] = foot_velocities(x,params);
-    % alternate way to get pathlength
-    % x(11) = params.model.geom.track.r*atan(r_l(1)/(params.model.geom.track.r-r_l(2)));
-    % x(12) = params.model.geom.track.r*atan(r_r(1)/(params.model.geom.track.r-r_r(2)));
-    [p_l,t_l,~] = track(s(1),params);
-    [p_r,t_r,~] = track(s(2),params);
-
     % find the parts that don't depend on constraint forces
     H = H_eom(x,params);
-    M = mass_matrix(x,params);
-    Minv = inv(M);
+    M = mass_matrix(x,params); % NOTE: eliminated use of symbolic inverse mass matrix since it takes so long to compute
+    Minv = inv(M); 
     [A,Hessian] = constraint_derivatives(x,params);
 
     % solve for constraint forces, if any; compute velocities and accelerations
@@ -342,12 +356,19 @@ function [dx,F] = robot_dynamics(~,x,u)
     % compute the constraint forces and accelerations
     F_active = (A*Minv*A')\(A*Minv*(Q - H) + Adotqdot); % these are the constraint forces
     dx(1:nq) = (eye(nq) - A'*((A*A')\A))*q_dot;  
+    % NOTE:  important change to next line:  subtract off an error term to
+    % ensure that velocities converge to values that observe constraints
     dx(nq+1:2*nq) = Minv*(Q - H - A'*F_active) - A'*((A*A')\A)*q_dot/params.control.dt;
 
     % 4x1 vector of constraint forces
     F = zeros(4,1);
     F(params.sim.constraints.active) = F_active;   
 
+    % compute the pathlength derivatives for constraint tracking
+    [r_l,r_r] = foot_coordinates(x,params);
+    [v_l,v_r] = foot_velocities(x,params);
+    [p_l,t_l,~] = track(s(1),params);
+    [p_r,t_r,~] = track(s(2),params);
     dx(2*nq+1) = (v_l + params.sim.constraints.gain*(r_l - p_l))'*t_l;
     dx(2*nq+2) = (v_r + params.sim.constraints.gain*(r_r - p_r))'*t_r;
 

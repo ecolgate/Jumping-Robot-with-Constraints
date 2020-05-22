@@ -56,12 +56,13 @@ while t_write < params.sim.tfinal
     tspan = [t_write, t_write+dt];
     [tseg,xseg,Fseg,Pseg] = analog_plant(tspan,u,x_IC);
     
-    % find the state at the time a read was made
+    % find the state and sensor measurements at the time a read was made
     t_read = tseg(end) - params.control.delay;
     x_read = interp1(tseg,xseg,t_read);
+    y = sensor(t_read,x_read,u);
     
     % compute the control 
-    [u,memory] = digital_controller(t_read,x_read,memory);
+    [u,memory] = digital_controller(y,memory);
     
     % update t_write and x_IC for next iteration
     t_write = tseg(end);
@@ -145,28 +146,27 @@ fprintf('Done!\n');
 
 
 
-%% BELOW HERE ARE THE NESTED FUNCTIONS, DIGITAL_CONTROLLER, ANALOG_PLANT, AND ROBOT_DYNAMICS
+%% BELOW HERE ARE THE NESTED FUNCTIONS, SENSOR, DIGITAL_CONTROLLER, ANALOG_PLANT, AND ROBOT_DYNAMICS
 %% THEY HAVE ACCESS TO ALL VARIABLES IN MAIN
 
-%% digital_controller.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% sensor.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % Description:
-%   Computes the torque commands to the two motors 
+%   Computes the sensor values that are sent to the digital controller 
 %
 % Inputs:
 %   t_read: time at which sensors are read
 %   x_read: the 12x1 state vector at the time of a read (note that not all
 %   of the state is actually read ... we must determine the sensor readings
 %   from x_read)
-%   memory: a struct that holds stored variables
+%   u: the control inputs (used here because we have to call
+%   robot_dynamics)
 %
 % Outputs:
-%   u: the two torque commands
-%   memory: a struct that holds stored variables
+%   y: the sensor values
 
-function [u,memory] = digital_controller(t_read,x_read,memory)
+function [y] = sensor(t_read,x_read,u)
     
-    % figure out what sensors can see
     % NOTE:  right now, sensors are "perfect" -- no noise or quantization.
     % That *should* be added!
     y = zeros(5,1);
@@ -180,9 +180,28 @@ function [u,memory] = digital_controller(t_read,x_read,memory)
     % flat
     theta_f = x_read(3);
     rot = [cos(theta_f), sin(theta_f); -sin(theta_f), cos(theta_f)];
-    [dx,~] = robot_dynamics(t_read,x_read',memory.u);
+    [dx,~] = robot_dynamics(t_read,x_read',u);
     accel_actual = [dx(6);dx(7)-params.model.dyn.g];
     y(4:5) = rot*accel_actual;       % measured accelerations
+    
+end
+%% end of sensor.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    
+%% digital_controller.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Description:
+%   Computes the torque commands to the two motors 
+%
+% Inputs:
+%   y: the 5x1 output vector at the time of a read 
+%   memory: a struct that holds stored variables
+%
+% Outputs:
+%   u: the two torque commands
+%   memory: a struct that holds stored variables
+
+function [u,memory] = digital_controller(y,memory)
     
     % estimate theta_s_dot and theta_m_dot by backwards difference
     % differentiation
