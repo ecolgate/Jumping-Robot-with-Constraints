@@ -15,7 +15,7 @@ function params = init_params
     % geometrical parameters (meters):
     params.model.geom.foot.htop = 0.05; % height from CoM to pivot
     params.model.geom.foot.hbot = 0.05; % height from base of foot to COM
-    params.model.geom.foot.w = 0.1/sqrt(3);    % half-width of foot
+    params.model.geom.foot.w = 0.2/sqrt(3);    % half-width of foot
     params.model.geom.spine.h = 0.45;   % height of spine
     params.model.geom.spine.w = 0.02;   % width of spine
     params.model.geom.spine.l = params.model.geom.spine.h/2;   % distance from pivot to CoM
@@ -23,7 +23,6 @@ function params = init_params
     params.model.geom.body.w = 0.14;   % width of the body
     params.model.geom.body.pb = 0;  %params.model.geom.body.w/4; % offset of body CoM
     params.model.geom.body.r = 0.0012; % radius of the pinion
-    params.model.geom.track.r = 1.5;  % radius of the track
         
     % parameters relating to inertia and potential energy:
     params.model.dyn.foot.m = 0.2;    % kg -- mass of the foot
@@ -33,45 +32,12 @@ function params = init_params
     params.model.dyn.body.m = 2.5;  % kg -- most of the mass is concentrated in the body
     params.model.dyn.body.J = params.model.dyn.body.m*(params.model.geom.body.h^2 + params.model.geom.body.w^2)/12;
     params.model.dyn.body.Jm = 53.8e-7; % kg-m^2  moment of inertia of Maxon EC40 motor
-    params.model.dyn.K = 25;        % Nm/rad rotational stiffness of spring
+    params.model.dyn.K = 0;        % Nm/rad rotational stiffness of spring
     params.model.dyn.g = 9.81;      % acceleration due to gravity
     
     % parameters related to simulating (integrating) the dynamics forward
     % in time:
-    theta = asin(params.model.geom.foot.w/params.model.geom.track.r);
-    params.sim.ICs.track.sl = -params.model.geom.track.r*theta;
-    params.sim.ICs.track.sr = params.model.geom.track.r*theta;
-    params.sim.ICs.foot.x = 0;      % initial foot x position 
-    params.sim.ICs.foot.z = params.model.geom.foot.hbot + params.model.geom.track.r*(1-cos(theta));  % initial foot z position
-    params.sim.ICs.foot.theta = 0;  % initial foot angle
-    params.sim.ICs.spine.theta = 0; % initial spine angle relative to foot
-    params.sim.ICs.body.theta = params.model.geom.spine.h/params.model.geom.body.r/2;  % initial motor angle
-    params.sim.ICs.foot.xdot = 1.0;   % initial foot x velocity
-    params.sim.ICs.foot.zdot = 0;   % initial foot z velocity
-    params.sim.ICs.foot.thetadot = params.sim.ICs.foot.xdot/params.model.geom.track.r;  % initial foot angular velocity
-    params.sim.ICs.spine.thetadot = 0; % initial spine angular velocity relative to foot
-    params.sim.ICs.body.thetadot = 0;  % initial motor angular velocity
-    params.sim.tfinal = 6;           % simulation final time
-    
-    % package these up
-    params.x_IC = [params.sim.ICs.foot.x;
-                    params.sim.ICs.foot.z;
-                    params.sim.ICs.foot.theta;
-                    params.sim.ICs.spine.theta;
-                    params.sim.ICs.body.theta;
-                    params.sim.ICs.foot.xdot;
-                    params.sim.ICs.foot.zdot;
-                    params.sim.ICs.foot.thetadot;
-                    params.sim.ICs.spine.thetadot;
-                    params.sim.ICs.body.thetadot;
-                    params.sim.ICs.track.sl;
-                    params.sim.ICs.track.sr];
-
-    % variables related to the constraints
-    % list of *unilateral* constraints: [left foot, right foot]   1 if active; 0 if inactive
-    params.sim.constraints.active = logical([1 1 0 0]);   % [c_lf; c_rf; c_top; c_bot] initially, both left and right foot constraints are active, but the spine constraints are not
-    params.sim.constraints.restitution = [0.0, 0.0, 0.0, 0.0];   % coefficients of restitution of the unilateral constraints
-    params.sim.constraints.gain = 500;
+    params.sim.tfinal = 1;           % simulation final time
     
     % parameters relating to the motors
     params.motor.spine.peaktorque = 1.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
@@ -103,7 +69,7 @@ function params = init_params
     params.viz.colors.tracers.body_com = 'b';
     params.viz.colors.tracers.spine_tip = 'g';
     params.viz.colors.vectors = 'k';
-    params.viz.axis_lims = [-1,1,-0.5,1.5];
+    params.viz.axis_lims = [-.5,.5,0,1];
     params.viz.dt = 0.01; % timestep for animation
     
     % home shape/configuration of foot with CoM at origin

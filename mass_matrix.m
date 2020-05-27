@@ -13,23 +13,24 @@
 
 function M = mass_matrix(x,params)
 
-theta_f = x(3);
-theta_m = x(5);
-theta_s = x(4);
+theta_f = x(1);
+theta_m = x(3);
+theta_s = x(2);
 
 J_b = params.model.dyn.body.J;
 J_f = params.model.dyn.foot.J;
 J_m = params.model.dyn.body.Jm;
 J_s = params.model.dyn.spine.J;
+h_f = params.model.geom.foot.hbot;
 l_f = params.model.geom.foot.htop;
 l_s = params.model.geom.spine.l;
 m_b = params.model.dyn.body.m;
 m_f = params.model.dyn.foot.m;
 m_s = params.model.dyn.spine.m;
-p_b = params.model.geom.body.pb;
 r = params.model.geom.body.r;
+w_f = params.model.geom.foot.w;
 
-M = autogen_mass_matrix(J_b,J_f,J_m,J_s,l_f,l_s,m_b,m_f,m_s,p_b,r,theta_f,theta_m,theta_s);
+M = autogen_mass_matrix(J_b,J_f,J_m,J_s,h_f,l_f,l_s,m_b,m_f,m_s,r,theta_f,theta_m,theta_s,w_f);
 
 end
 

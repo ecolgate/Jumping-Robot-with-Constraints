@@ -14,15 +14,21 @@
 
 function [FK_pivot,FK_tip] = fk_viz(x,params)
 
-x_f = x(1);
-z_f = x(2);
-theta_f = x(3);
-theta_s = x(4);
+theta_f = x(1);
+theta_m = x(3);
+theta_s = x(2);
 
+h_f = params.model.geom.foot.hbot;
 l_f = params.model.geom.foot.htop;
+l_s = params.model.geom.spine.l;
 l_spine = params.model.geom.spine.h;
+m_b = params.model.dyn.body.m;
+m_f = params.model.dyn.foot.m;
+m_s = params.model.dyn.spine.m;
+r = params.model.geom.body.r;
+w_f = params.model.geom.foot.w;
 
-[FK_pivot,FK_tip] = autogen_fk_viz(l_f,l_spine,theta_f,theta_s,x_f,z_f);
+[FK_pivot,FK_tip] = autogen_fk_viz(h_f,l_f,l_s,l_spine,m_b,m_f,m_s,r,theta_f,theta_m,theta_s,w_f);
 
 end
 
