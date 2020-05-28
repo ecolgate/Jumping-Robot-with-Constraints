@@ -37,7 +37,7 @@ memory.est2_theta_f = 0;
 memory.filt2_theta_f = 0;
 
 %% set up communication
-tiva_port = serialport('COM3', 115200);
+tiva_port = serialport('COM3', 9600);
 
 %% set up control timing
 t_write = 0.0;          % starting time
@@ -204,8 +204,9 @@ end
 %   u: the two torque commands
 
 function [u] = digital_controller(y,port)
+    %flush(port);
     % Tiva expects a ! character as a header
-    write(port, '!', 'uint8');
+    %write(port, '!', 'uint8');
     
     % Now we write the sensor state
     write(port, y, 'single');
