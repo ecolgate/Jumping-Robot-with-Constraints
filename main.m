@@ -36,6 +36,9 @@ memory.filt1_theta_f = 0;
 memory.est2_theta_f = 0;
 memory.filt2_theta_f = 0;
 
+%% set up communication
+tiva_port = serialport('COM3', 115200);
+
 %% set up control timing
 t_write = 0.0;          % starting time
 dt = params.control.dt; % controller time step
@@ -62,7 +65,7 @@ while t_write < params.sim.tfinal
     y = sensor(t_read,x_read,u);
     
     % compute the control 
-    [u,memory] = digital_controller(y,memory);
+    u = digital_controller(y,tiva_port);
     
     % update t_write and x_IC for next iteration
     t_write = tseg(end);
@@ -77,7 +80,7 @@ while t_write < params.sim.tfinal
     % variables based off of tcontrol, not tsim
     tcontrol = [tcontrol;t_read];
     usim = [usim;u];
-    theta_f_estc = [theta_f_estc;memory.filt1_theta_f+memory.filt2_theta_f];  % CHECK THIS
+    %theta_f_estc = [theta_f_estc;memory.filt1_theta_f+memory.filt2_theta_f];  % CHECK THIS
         
 end
 
@@ -113,7 +116,7 @@ legend('Total Energy','Net Energy','Kinetic Energy','Potential Energy')
 figure;
 plot(tsim,xsim(:,3),'k-','LineWidth',2);  
 hold on
-plot(tcontrol,theta_f_estc,'r-','LineWidth',1);
+%plot(tcontrol,theta_f_estc,'r-','LineWidth',1);
 ylabel('Foot Angle versus Estimate')
 xlabel('time (sec)')
 legend('Foot Angle','Estimate')
@@ -194,58 +197,24 @@ end
 %   Computes the torque commands to the two motors 
 %
 % Inputs:
-%   y: the 5x1 output vector at the time of a read 
-%   memory: a struct that holds stored variables
+%   y: the 5x1 output vector at the time of a read
+%   port: the serial port to communicate with the Tiva
 %
 % Outputs:
 %   u: the two torque commands
-%   memory: a struct that holds stored variables
 
-function [u,memory] = digital_controller(y,memory)
+function [u] = digital_controller(y,port)
+    % Tiva expects a ! character as a header
+    write(port, '!', 'uint8');
     
-    % estimate theta_s_dot and theta_m_dot by backwards difference
-    % differentiation
-    % NOTE: some low pass filtering should probably be added
-    est_theta_s_dot = (y(1) - memory.y(1))/params.control.dt;
-    est_theta_m_dot = (y(2) - memory.y(2))/params.control.dt;
+    % Now we write the sensor state
+    write(port, y, 'single');
     
-    % estimate theta_f from IMU readings
-    % two approaches:  1) integrate theta_f_dot;  2) use the measured
-    % accelerations and the knowledge of track shape to estimate it.  This
-    % approach depends on a model, but doesn't have the problem of drift
-    %
-    % Approach 1:  Integrate gyro
-    est1_theta_f = memory.est1_theta_f + y(3)*params.control.dt;
-    %
-    % Approach 2:  Use gyro + acceleration + model of track
-    theta_f_ddot = (y(3) - memory.y(3))/params.control.dt;  % foot angular acceleration
-    rtrack = params.model.geom.track.r;  % radius of track
-    est2_theta_f = atan2(rtrack*theta_f_ddot - y(4),rtrack*y(3)^2 - y(5));
-    %
-    % Combined Estimate: high pass est1, low pass est2, and add
-    filt1_theta_f = params.control.foot.alpha*(memory.filt1_theta_f + est1_theta_f - memory.est1_theta_f);
-    filt2_theta_f = params.control.foot.alpha*memory.filt2_theta_f + (1-params.control.foot.alpha)*est2_theta_f;
-    est_combined_theta_f = filt1_theta_f + filt2_theta_f;
+    % And read back the controller's requested torques
+    command = read(port, 2, 'single');
     
-    % PUMP!!!  Based on theta_f and theta_f_dot, move body up or down
-    if est_combined_theta_f>=0 && y(3)>=0
-        theta_m_des = params.control.theta_m_high;
-    elseif est_combined_theta_f>=0 && y(3)<0
-        theta_m_des = params.control.theta_m_low;
-    elseif est_combined_theta_f<0 && y(3)<0
-        theta_m_des = params.control.theta_m_high;
-    else
-        theta_m_des = params.control.theta_m_low;  
-    end
-        
-    % Compute u with PD control
-    % NOTE: the desired velocity here is always zero.  Basically, we are
-    % moving the robot from one fixed pose to another.  LQR is also a good
-    % approach to this.
-    u(2,1) = params.control.body.kp*(theta_m_des - y(2)) + ...
-        params.control.body.kd*(0 - est_theta_m_dot);
-    u(1,1) = params.control.spine.kp*(params.control.theta_s_des - y(1)) + ...
-        params.control.spine.kd*(0 - est_theta_s_dot);  % - u(2,1);
+    u(2,1) = command(2);
+    u(1,1) = command(1);
     
     % Saturate u (i.e., observe actuator limitations!)
     if abs(u(1)) > params.motor.spine.peaktorque
@@ -254,15 +223,6 @@ function [u,memory] = digital_controller(y,memory)
     if abs(u(2)) > params.motor.body.peaktorque
         u(2) = params.motor.body.peaktorque*sign(u(2));
     end
-    
-    % Update memory (these are values that the Tiva would store)
-    memory.u = u;
-    memory.y = y;
-    memory.est1_theta_f = est1_theta_f;
-    memory.est2_theta_f = est2_theta_f;
-    memory.filt1_theta_f = filt1_theta_f;
-    memory.filt2_theta_f = filt2_theta_f;
-    
 end
 %% end of digital_controller.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

@@ -51,7 +51,7 @@ function params = init_params
     params.sim.ICs.foot.thetadot = params.sim.ICs.foot.xdot/params.model.geom.track.r;  % initial foot angular velocity
     params.sim.ICs.spine.thetadot = 0; % initial spine angular velocity relative to foot
     params.sim.ICs.body.thetadot = 0;  % initial motor angular velocity
-    params.sim.tfinal = 6;           % simulation final time
+    params.sim.tfinal = 1;           % simulation final time
     
     % package these up
     params.x_IC = [params.sim.ICs.foot.x;
