@@ -56,19 +56,21 @@ M_eq = mass_matrix(x_eq,params);    % mass matrix at equilibrium
 G_jac_eq = derivative_conservative_forces(x_eq,params); % gravitational and spring forces at equilibrium
 % create A and B matrices of linear system
 A = [zeros(3,3),eye(3);-M_eq\G_jac_eq,zeros(3,3)];
+Open_Loop_Poles = eig(A)  % display the unstable open loop poles
 B = [zeros(3,2);M_eq\[0,0;eye(2)]];
+
 % then, set up Q and R matrices using Bryson's Rule
 % I had to play with the weights quite a bit to get something reasonable.
 % I ended up putting very low penalty on the angles, none on the angular
 % velocities, and max penalty on the actuation (R_lqr).  This effectively
 % turns down the gain, which is important for digital control.  Too much
 % gain, and things get unstable
-Q_lqr = diag([.0000001,.0000001,.0000001,0,0,0]);
+Q_lqr = 1e-7*diag([1,1,1,0,0,0]);
 R_lqr = eye(2);
 % then solve for optimal gains
 [Gains,~,Poles] = lqr(A,B,Q_lqr,R_lqr);
-% Poles  % uncomment this line if you want to see the closed loop poles
-% pause
+Poles  % uncomment this line if you want to see the closed loop poles
+pause
 
 %% initialize the state
 x_IC = x_eq;
@@ -224,7 +226,9 @@ function [u,memory] = digital_controller(y,Gains,memory)
     
     % I've removed saturation to make it work.  If I put this back, things
     % go haywire after a while.  Probably by increasing the gain a bit, we
-    % could bring this back.  For now, it might be better just to plot a
+    % could bring this back.  For now, it might be better just to plot
+    % actuator torques
+    
     % Saturate u (i.e., observe actuator limitations!)
 %     if abs(u(1)) > params.motor.spine.peaktorque
 %         u(1) = params.motor.spine.peaktorque*sign(u(1));
@@ -252,12 +256,11 @@ end
 % Inputs:
 %   tspan: [start time, end time]
 %   u: torque commands
-%   x_IC: the 12x1 state vector at the start time
+%   x_IC: the 6x1 state vector at the start time
 %
 % Outputs:
 %   tseg: the vector of times at which states were computed
 %   xseg: the states at those times
-%   Fseg: the constraint forces at those times
 
 function [tseg,xseg] = analog_plant(tspan,u,x_IC)
 
@@ -273,22 +276,18 @@ end
 %% robot_dynamics.m %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % Description:
-%   Computes the constraint forces: 
-%       Fnow = inv(A*Minv*A')*(A*Minv*(Q-H) + Adotqdot)
 %
-%   Also computes the derivative of the state:
-%       x_dot(1:5) = (I - A'*inv(A*A')*A)*x(6:10)
-%       x_dot(6:10) = inv(M)*(Q - H - A'F)
-%       x_dot(11:12) = [ds_left; ds_right];
+%   Computes the derivative of the state:
+%       x_dot(1:3) = x(4:6)
+%       x_dot(4:6) = inv(M)*(Q - H)
 %
 % Inputs:
 %   t: time (scalar)
-%   x: the 10x1 state vector
+%   x: the 6x1 state vector
 %   u: the 2x1 motor torque commands
 %
 % Outputs:
 %   dx: derivative of state x with respect to time.
-%   F:  4x1 vector of constraint forces
 
 function [dx] = robot_dynamics(~,x,u)
 
@@ -300,7 +299,7 @@ function [dx] = robot_dynamics(~,x,u)
     % set up generalized forces based on motor torques
     Q = [0;u];
 
-    % find the parts that don't depend on constraint forces
+    % compute M and H
     H = H_eom(x,params);
     M = mass_matrix(x,params); % NOTE: eliminated use of symbolic inverse mass matrix since it takes so long to compute
 

@@ -56,19 +56,21 @@ M_eq = mass_matrix(x_eq,params);    % mass matrix at equilibrium
 G_jac_eq = derivative_conservative_forces(x_eq,params); % gravitational and spring forces at equilibrium
 % create A and B matrices of linear system
 A = [zeros(3,3),eye(3);-M_eq\G_jac_eq,zeros(3,3)];
+Open_Loop_Poles = eig(A)  % display the unstable open loop poles
 B = [zeros(3,2);M_eq\[0,0;eye(2)]];
+
 % then, set up Q and R matrices using Bryson's Rule
 % I had to play with the weights quite a bit to get something reasonable.
 % I ended up putting very low penalty on the angles, none on the angular
 % velocities, and max penalty on the actuation (R_lqr).  This effectively
 % turns down the gain, which is important for digital control.  Too much
 % gain, and things get unstable
-Q_lqr = diag([.0000001,.0000001,.0000001,0,0,0]);
+Q_lqr = 1e-7*diag([1,1,1,0,0,0]);
 R_lqr = eye(2);
 % then solve for optimal gains
 [Gains,~,Poles] = lqr(A,B,Q_lqr,R_lqr);
-% Poles  % uncomment this line if you want to see the closed loop poles
-% pause
+Poles  % uncomment this line if you want to see the closed loop poles
+
 
 %% initialize the state
 x_IC = x_eq;
@@ -297,7 +299,7 @@ function [dx] = robot_dynamics(~,x,u)
     % set up generalized forces based on motor torques
     Q = [0;u];
 
-    % find the parts that don't depend on constraint forces
+    % compute M and H
     H = H_eom(x,params);
     M = mass_matrix(x,params); % NOTE: eliminated use of symbolic inverse mass matrix since it takes so long to compute
 
