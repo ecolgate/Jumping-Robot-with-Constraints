@@ -8,6 +8,7 @@ M(q)q_ddot + H(q,q_dot) + A'F = Q
 When deriving the CPFL controller, you need to use H + A'F instead of just H.  
 
 In principle, this approach makes it easier to design the feedback controller, and ensures that the feedback controller works properly in all configuration of the robot.  However, I found it still quite challenging to pick the proper gains:  be prepared for some iteration.  Additionally, I had to speed up the sampling rate to 500 Hz to get everything to be well behaved.
+
 -----------
 
 PREVIOUS: 
