@@ -1,6 +1,18 @@
 # Jumping-Robot-with-Constraints / Pumping Robot
 
-NEW:  Feedback control has been added and a simple pumping strategy has been implemented.  Many other changes for cleanliness, but one IMPORTANT CHANGE: 
+----------
+NEW (6/4/20): the digital controller now uses Colocated Partial Feedback Linearization.  One important thing to note:  to do this correctly, it is necessary to consider constraint forces.  The dynamics equation is:
+
+M(q)q_ddot + H(q,q_dot) + A'F = Q
+
+When deriving the CPFL controller, you need to use H + A'F instead of just H.  
+
+In principle, this approach makes it easier to design the feedback controller, and ensures that the feedback controller works properly in all configuration of the robot.  However, I found it still quite challenging to pick the proper gains:  be prepared for some iteration.  Additionally, I had to speed up the sampling rate to 500 Hz to get everything to be well behaved.
+-----------
+
+PREVIOUS: 
+
+Feedback control has been added and a simple pumping strategy has been implemented.  Many other changes for cleanliness, but one IMPORTANT CHANGE: 
 
 The equation in `robot_dymamics.m` for acceleration has been changed to include a feedback term (see line 340 in `main.m`).  The feedback term is:
 
@@ -11,8 +23,6 @@ This is a projection of the velocity (q_dot) onto the space of constraint violat
 Other changes: 
 
 Feedback control has been added.  This has a simple structure with the function `digital_controller.m` computing the control commands (u) and the function `analog_controller.m` updating the state.
-
-The digital controller is pretty simple:  PD control at each motor (spine and body).  Joint angles are assumed to be read perfectly from encoders, and velocities found by backward difference differentiation.  
 
 A state machine has been added for pumping.  It is also quite simple:  when the angle and angular velocity of the foot have the same sign, the body is pushed to a high position; when they have different signs, the body is lowered.  This strategy is based on:
 
