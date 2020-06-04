@@ -15,7 +15,7 @@ function params = init_params
     % geometrical parameters (meters):
     params.model.geom.foot.htop = 0.05; % height from CoM to pivot
     params.model.geom.foot.hbot = 0.05; % height from base of foot to COM
-    params.model.geom.foot.w = 0.1/sqrt(3);    % half-width of foot
+    params.model.geom.foot.w = 0.2/sqrt(3);    % half-width of foot
     params.model.geom.spine.h = 0.45;   % height of spine
     params.model.geom.spine.w = 0.02;   % width of spine
     params.model.geom.spine.l = params.model.geom.spine.h/2;   % distance from pivot to CoM
@@ -74,21 +74,25 @@ function params = init_params
     params.sim.constraints.gain = 500;
     
     % parameters relating to the motors
-    params.motor.spine.peaktorque = 1.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
+    params.motor.spine.peaktorque = 5.0; % Nm  assumes Maxon EC40 and 3.3x gear ratio
     params.motor.body.peaktorque = 0.3; % Nm  assumes Maxon EC40
     
     % parameters relating to the control
-    params.control.dt = .005;        % controller time step
+    params.control.dt = .002;        % controller time step
     params.control.delay = 0.5*params.control.dt;  % commmunication and computation delay
     % spine joint angle controller
-    params.control.theta_s_des = 0;    
-    params.control.spine.kp = 5;
-    params.control.spine.kd = 1;
+    params.control.theta_s_des = 0;  
+    wn_spine = 2*pi*150;  % make this as stiff/fast as possible
+    zeta_spine = 1;
+    params.control.spine.kp = wn_spine^2;     %5;
+    params.control.spine.kd = 2*zeta_spine*wn_spine;      %1;
     % body motor joint angle controller
     params.control.theta_m_high = (params.model.geom.spine.h - .1)/params.model.geom.body.r;    
     params.control.theta_m_low = (params.model.geom.body.h)/params.model.geom.body.r;    
-    params.control.body.kp = .01;
-    params.control.body.kd = 10e-4;
+    wn_body = 2*pi*5;  % make this pretty slow
+    zeta_body = 1;
+    params.control.body.kp = wn_body^2;     %.01;
+    params.control.body.kd = 2*zeta_body*wn_body;      %10e-4;
     % foot angle estimator
     params.control.foot.tau = 10*params.control.dt;  % time constant for theta_f filter
     params.control.foot.alpha = params.control.foot.tau/(params.control.foot.tau+params.control.dt);
